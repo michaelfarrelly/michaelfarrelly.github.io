@@ -1,0 +1,629 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Spiral Galaxy with Black Hole Simulation</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background: #000;
+            overflow: hidden;
+            font-family: Arial, sans-serif;
+        }
+        
+        #container {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+        }
+        
+        #controls {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            z-index: 100;
+            color: #fff;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 15px;
+            border-radius: 8px;
+            backdrop-filter: blur(10px);
+        }
+        
+        .control-group {
+            margin-bottom: 10px;
+        }
+        
+        label {
+            display: inline-block;
+            width: 120px;
+            font-size: 12px;
+        }
+        
+        input[type="range"] {
+            width: 100px;
+        }
+        
+        #info {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            color: #888;
+            font-size: 11px;
+            max-width: 300px;
+        }
+    </style>
+</head>
+<body>
+    <div id="container">
+        <div id="controls">
+            <div class="control-group">
+                <label>Rotation Speed:</label>
+                <input type="range" id="rotationSpeed" min="0.1" max="300" step="0.1" value="1">
+                <span id="rotationValue">1.0</span>
+            </div>
+            <div class="control-group">
+                <label>Spiral Tightness:</label>
+                <input type="range" id="spiralTight" min="0.5" max="3" step="0.1" value="1.5">
+                <span id="spiralValue">1.5</span>
+            </div>
+            <div class="control-group">
+                <label>Particle Count:</label>
+                <input type="range" id="particleCount" min="5000" max="50000" step="1000" value="25000">
+                <span id="countValue">25000</span>
+            </div>
+            <div class="control-group">
+                <label>Arm Count:</label>
+                <input type="range" id="armCount" min="2" max="6" step="1" value="4">
+                <span id="armValue">4</span>
+            </div>
+            <div class="control-group">
+                <label>Black Hole Mass:</label>
+                <input type="range" id="blackHoleMass" min="10" max="200" step="5" value="50">
+                <span id="massValue">50</span>
+            </div>
+        </div>
+        
+        <div id="info">
+            <p>Mouse/Single Touch: Rotate view | Scroll/Pinch: Zoom | Controls: Adjust galaxy parameters</p>
+            <p>Black hole simulation with event horizon and gravitational effects</p>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script>
+        class GalaxySimulation {
+            constructor() {
+                this.scene = new THREE.Scene();
+                this.camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 10000);
+                this.renderer = new THREE.WebGLRenderer({ antialias: true });
+                this.particles = null;
+                this.particleSystem = null;
+                
+                // Galaxy parameters
+                this.params = {
+                    particleCount: 15000,
+                    rotationSpeed: 1.0,
+                    spiralTightness: 1.5,
+                    armCount: 4,
+                    galaxyRadius: 300,
+                    coreRadius: 30,
+                    diskHeight: 20,
+                    blackHoleMass: 50,
+                    eventHorizon: 5
+                };
+                
+                // Second galaxy parameters
+                this.params2 = {
+                    particleCount: 12000,
+                    rotationSpeed: 0.8,
+                    spiralTightness: 2.0,
+                    armCount: 3,
+                    galaxyRadius: 250,
+                    coreRadius: 25,
+                    diskHeight: 15,
+                    blackHoleMass: 40,
+                    eventHorizon: 4,
+                    position: { x: 600, y: 100, z: 200 },
+                    tilt: 30 * Math.PI / 180 // 30 degrees in radians
+                };
+                
+                // Particle data arrays for both galaxies
+                this.positions = null;
+                this.velocities = null;
+                this.colors = null;
+                this.ages = null;
+                this.radii = null;
+                this.angles = null;
+                
+                this.positions2 = null;
+                this.velocities2 = null;
+                this.colors2 = null;
+                this.ages2 = null;
+                this.radii2 = null;
+                this.angles2 = null;
+                
+                // Black hole objects
+                this.blackHole = null;
+                this.accretionDisk = null;
+                this.photonSphere = null;
+                
+                this.blackHole2 = null;
+                this.accretionDisk2 = null;
+                this.photonSphere2 = null;
+                
+                // Particle systems
+                this.particleSystem = null;
+                this.particleSystem2 = null;
+                
+                this.init();
+                this.createGalaxy();
+                this.createBlackHole();
+                this.setupControls();
+                this.animate();
+            }
+            
+            init() {
+                // Renderer setup
+                this.renderer.setSize(window.innerWidth, window.innerHeight);
+                this.renderer.setClearColor(0x000011);
+                document.getElementById('container').appendChild(this.renderer.domElement);
+                
+                // Camera position
+                this.camera.position.set(0, 200, 800);
+                this.camera.lookAt(0, 0, 0);
+                
+                // Mouse controls
+                this.mouse = { x: 0, y: 0, isDown: false };
+                this.cameraAngle = { x: 0, y: 0 };
+                this.setupMouseControls();
+                
+                // Add ambient lighting
+                const ambientLight = new THREE.AmbientLight(0x404040, 0.3);
+                this.scene.add(ambientLight);
+                
+                // Add central bright light (galactic core)
+                const coreLight = new THREE.PointLight(0xffffff, 2, 1000);
+                coreLight.position.set(0, 0, 0);
+                this.scene.add(coreLight);
+            }
+            
+            createBlackHole() {
+                // Remove existing black hole components
+                if (this.blackHole) {
+                    this.scene.remove(this.blackHole);
+                    this.scene.remove(this.accretionDisk);
+                    this.scene.remove(this.photonSphere);
+                }
+                
+                // Update event horizon size based on mass
+                this.params.eventHorizon = Math.max(3, this.params.blackHoleMass * 0.1);
+                
+                // Event horizon (black sphere)
+                const horizonGeometry = new THREE.SphereGeometry(this.params.eventHorizon, 32, 32);
+                const horizonMaterial = new THREE.MeshBasicMaterial({ 
+                    color: 0x000000,
+                    transparent: true,
+                    opacity: 0.9
+                });
+                this.blackHole = new THREE.Mesh(horizonGeometry, horizonMaterial);
+                this.scene.add(this.blackHole);
+                
+                // Accretion disk
+                const diskGeometry = new THREE.RingGeometry(this.params.eventHorizon * 2, this.params.eventHorizon * 6, 64);
+                const diskMaterial = new THREE.MeshBasicMaterial({
+                    color: 0xff4500,
+                    side: THREE.DoubleSide,
+                    transparent: true,
+                    opacity: 0.6,
+                    blending: THREE.AdditiveBlending
+                });
+                this.accretionDisk = new THREE.Mesh(diskGeometry, diskMaterial);
+                this.accretionDisk.rotation.x = Math.PI / 2;
+                this.scene.add(this.accretionDisk);
+                
+                // Photon sphere glow
+                const glowGeometry = new THREE.SphereGeometry(this.params.eventHorizon * 1.5, 32, 32);
+                const glowMaterial = new THREE.MeshBasicMaterial({
+                    color: 0xffaa00,
+                    transparent: true,
+                    opacity: 0.3,
+                    blending: THREE.AdditiveBlending
+                });
+                this.photonSphere = new THREE.Mesh(glowGeometry, glowMaterial);
+                this.scene.add(this.photonSphere);
+            }
+            
+            createGalaxy() {
+                if (this.particleSystem) {
+                    this.scene.remove(this.particleSystem);
+                }
+                
+                const count = this.params.particleCount;
+                
+                // Initialize arrays
+                this.positions = new Float32Array(count * 3);
+                this.velocities = new Float32Array(count * 3);
+                this.colors = new Float32Array(count * 3);
+                this.ages = new Float32Array(count);
+                this.radii = new Float32Array(count);
+                this.angles = new Float32Array(count);
+                
+                // Generate particles
+                for (let i = 0; i < count; i++) {
+                    this.generateParticle(i);
+                }
+                
+                // Create geometry and material
+                const geometry = new THREE.BufferGeometry();
+                geometry.setAttribute('position', new THREE.BufferAttribute(this.positions, 3));
+                geometry.setAttribute('color', new THREE.BufferAttribute(this.colors, 3));
+                
+                const material = new THREE.PointsMaterial({
+                    size: 2,
+                    vertexColors: true,
+                    blending: THREE.AdditiveBlending,
+                    transparent: true,
+                    opacity: 0.8
+                });
+                
+                this.particleSystem = new THREE.Points(geometry, material);
+                this.scene.add(this.particleSystem);
+            }
+            
+            generateParticle(index) {
+                const i3 = index * 3;
+                
+                // Generate radius with higher density toward center (but not too close to black hole)
+                let r = Math.pow(Math.random(), 0.5) * this.params.galaxyRadius;
+                r = Math.max(r, this.params.eventHorizon * 3); // Keep particles away from event horizon
+                this.radii[index] = r;
+                
+                // Generate angle based on spiral arms
+                const armIndex = Math.floor(Math.random() * this.params.armCount);
+                const armAngle = (armIndex / this.params.armCount) * Math.PI * 2;
+                const spiralAngle = armAngle + (r / this.params.galaxyRadius) * Math.PI * this.params.spiralTightness;
+                
+                // Add some randomness to prevent perfect spirals
+                const angleNoise = (Math.random() - 0.5) * 0.5;
+                const finalAngle = spiralAngle + angleNoise;
+                this.angles[index] = finalAngle;
+                
+                // Position
+                this.positions[i3] = Math.cos(finalAngle) * r;
+                this.positions[i3 + 2] = Math.sin(finalAngle) * r;
+                
+                // Height distribution (disk galaxy)
+                const heightFactor = Math.exp(-r / (this.params.galaxyRadius * 0.3));
+                this.positions[i3 + 1] = (Math.random() - 0.5) * this.params.diskHeight * heightFactor;
+                
+                // Orbital velocity (Keplerian motion with flat rotation curve)
+                const orbitalSpeed = this.calculateOrbitalSpeed(r);
+                this.velocities[i3] = -Math.sin(finalAngle) * orbitalSpeed;
+                this.velocities[i3 + 1] = 0;
+                this.velocities[i3 + 2] = Math.cos(finalAngle) * orbitalSpeed;
+                
+                // Color based on position and age
+                this.setParticleColor(index, r);
+                
+                // Age for lifecycle effects
+                this.ages[index] = Math.random();
+            }
+            
+            calculateOrbitalSpeed(radius) {
+                // Simulate flat rotation curve with black hole influence
+                const blackHoleInfluence = Math.sqrt(this.params.blackHoleMass / Math.max(radius, this.params.eventHorizon));
+                const coreSpeed = 0.002 + blackHoleInfluence * 0.01;
+                const flatSpeed = 0.001;
+                
+                if (radius < this.params.coreRadius) {
+                    return (radius / this.params.coreRadius) * coreSpeed;
+                } else {
+                    return flatSpeed + (coreSpeed - flatSpeed) * Math.exp(-(radius - this.params.coreRadius) / 100);
+                }
+            }
+            
+            setParticleColor(index, radius) {
+                const i3 = index * 3;
+                const normalizedRadius = radius / this.params.galaxyRadius;
+                
+                // Color gradient from core to edge
+                if (normalizedRadius < 0.1) {
+                    // Core: bright yellow-white
+                    this.colors[i3] = 1.0;
+                    this.colors[i3 + 1] = 0.9;
+                    this.colors[i3 + 2] = 0.6;
+                } else if (normalizedRadius < 0.3) {
+                    // Inner arms: blue-white
+                    this.colors[i3] = 0.8;
+                    this.colors[i3 + 1] = 0.9;
+                    this.colors[i3 + 2] = 1.0;
+                } else if (normalizedRadius < 0.7) {
+                    // Middle arms: white-blue
+                    this.colors[i3] = 0.9;
+                    this.colors[i3 + 1] = 0.8;
+                    this.colors[i3 + 2] = 1.0;
+                } else {
+                    // Outer regions: red-orange
+                    this.colors[i3] = 1.0;
+                    this.colors[i3 + 1] = 0.6;
+                    this.colors[i3 + 2] = 0.3;
+                }
+                
+                // Add some randomness
+                const brightness = 0.7 + Math.random() * 0.3;
+                this.colors[i3] *= brightness;
+                this.colors[i3 + 1] *= brightness;
+                this.colors[i3 + 2] *= brightness;
+            }
+            
+            updateParticles() {
+                const count = this.params.particleCount;
+                const dt = 0.016; // Assuming 60fps
+                
+                for (let i = 0; i < count; i++) {
+                    const i3 = i * 3;
+                    
+                    // Get current position
+                    const x = this.positions[i3];
+                    const y = this.positions[i3 + 1];
+                    const z = this.positions[i3 + 2];
+                    const distanceToCenter = Math.sqrt(x * x + y * y + z * z);
+                    
+                    // Particle absorption by black hole
+                    if (distanceToCenter < this.params.eventHorizon) {
+                        // Regenerate particle far from black hole
+                        this.generateParticle(i);
+                        continue;
+                    }
+                    
+                    // Strong gravitational acceleration near black hole
+                    if (distanceToCenter < this.params.eventHorizon * 10) {
+                        const gravityStrength = this.params.blackHoleMass / (distanceToCenter * distanceToCenter + 1);
+                        const gravityDirection = {
+                            x: -x / distanceToCenter,
+                            y: -y / distanceToCenter,
+                            z: -z / distanceToCenter
+                        };
+                        
+                        this.velocities[i3] += gravityDirection.x * gravityStrength * dt * 0.1;
+                        this.velocities[i3 + 1] += gravityDirection.y * gravityStrength * dt * 0.1;
+                        this.velocities[i3 + 2] += gravityDirection.z * gravityStrength * dt * 0.1;
+                    }
+                    
+                    // Update positions
+                    this.positions[i3] += this.velocities[i3] * dt * this.params.rotationSpeed * 10;
+                    this.positions[i3 + 1] += this.velocities[i3 + 1] * dt * this.params.rotationSpeed * 10;
+                    this.positions[i3 + 2] += this.velocities[i3 + 2] * dt * this.params.rotationSpeed * 10;
+                    
+                    // Update angles for spiral motion
+                    const currentRadius = Math.sqrt(this.positions[i3] * this.positions[i3] + this.positions[i3 + 2] * this.positions[i3 + 2]);
+                    
+                    if (currentRadius > 0) {
+                        const currentAngle = Math.atan2(this.positions[i3 + 2], this.positions[i3]);
+                        const orbitalSpeed = this.calculateOrbitalSpeed(currentRadius);
+                        const newAngle = currentAngle + orbitalSpeed * dt * this.params.rotationSpeed;
+                        
+                        // Update position based on new angle
+                        this.positions[i3] = Math.cos(newAngle) * currentRadius;
+                        this.positions[i3 + 2] = Math.sin(newAngle) * currentRadius;
+                        
+                        // Update velocity direction
+                        this.velocities[i3] = -Math.sin(newAngle) * orbitalSpeed * 10;
+                        this.velocities[i3 + 2] = Math.cos(newAngle) * orbitalSpeed * 10;
+                    }
+                    
+                    // Age particles and update colors
+                    this.ages[i] += dt * 0.01;
+                    if (this.ages[i] > 1) {
+                        this.ages[i] = 0;
+                        // Regenerate particle
+                        this.generateParticle(i);
+                    }
+                }
+                
+                // Animate black hole components
+                if (this.accretionDisk) {
+                    this.accretionDisk.rotation.z += 0.02 * this.params.rotationSpeed;
+                }
+                
+                // Update geometry
+                this.particleSystem.geometry.attributes.position.needsUpdate = true;
+                this.particleSystem.geometry.attributes.color.needsUpdate = true;
+            }
+            
+            setupMouseControls() {
+                const canvas = this.renderer.domElement;
+                
+                // Mouse controls
+                canvas.addEventListener('mousedown', (e) => {
+                    this.mouse.isDown = true;
+                    this.mouse.x = e.clientX;
+                    this.mouse.y = e.clientY;
+                });
+                
+                canvas.addEventListener('mousemove', (e) => {
+                    if (this.mouse.isDown) {
+                        const deltaX = e.clientX - this.mouse.x;
+                        const deltaY = e.clientY - this.mouse.y;
+                        
+                        this.cameraAngle.x += deltaY * 0.01;
+                        this.cameraAngle.y += deltaX * 0.01;
+                        
+                        this.cameraAngle.x = Math.max(-Math.PI/2, Math.min(Math.PI/2, this.cameraAngle.x));
+                        
+                        this.updateCameraPosition();
+                        
+                        this.mouse.x = e.clientX;
+                        this.mouse.y = e.clientY;
+                    }
+                });
+                
+                canvas.addEventListener('mouseup', () => {
+                    this.mouse.isDown = false;
+                });
+                
+                canvas.addEventListener('wheel', (e) => {
+                    e.preventDefault();
+                    const distance = this.camera.position.length();
+                    const newDistance = distance + e.deltaY * 0.1;
+                    const clampedDistance = Math.max(100, Math.min(2000, newDistance));
+                    
+                    this.camera.position.normalize().multiplyScalar(clampedDistance);
+                });
+                
+                // Touch controls for mobile
+                this.touches = [];
+                this.lastTouchDistance = 0;
+                
+                canvas.addEventListener('touchstart', (e) => {
+                    e.preventDefault();
+                    this.touches = Array.from(e.touches);
+                    
+                    if (this.touches.length === 1) {
+                        // Single touch - rotation
+                        this.mouse.isDown = true;
+                        this.mouse.x = this.touches[0].clientX;
+                        this.mouse.y = this.touches[0].clientY;
+                    } else if (this.touches.length === 2) {
+                        // Two finger pinch - zoom
+                        this.mouse.isDown = false;
+                        const dx = this.touches[0].clientX - this.touches[1].clientX;
+                        const dy = this.touches[0].clientY - this.touches[1].clientY;
+                        this.lastTouchDistance = Math.sqrt(dx * dx + dy * dy);
+                    }
+                });
+                
+                canvas.addEventListener('touchmove', (e) => {
+                    e.preventDefault();
+                    this.touches = Array.from(e.touches);
+                    
+                    if (this.touches.length === 1 && this.mouse.isDown) {
+                        // Single touch rotation
+                        const deltaX = this.touches[0].clientX - this.mouse.x;
+                        const deltaY = this.touches[0].clientY - this.mouse.y;
+                        
+                        this.cameraAngle.x += deltaY * 0.01;
+                        this.cameraAngle.y += deltaX * 0.01;
+                        
+                        this.cameraAngle.x = Math.max(-Math.PI/2, Math.min(Math.PI/2, this.cameraAngle.x));
+                        
+                        this.updateCameraPosition();
+                        
+                        this.mouse.x = this.touches[0].clientX;
+                        this.mouse.y = this.touches[0].clientY;
+                    } else if (this.touches.length === 2) {
+                        // Two finger pinch zoom
+                        const dx = this.touches[0].clientX - this.touches[1].clientX;
+                        const dy = this.touches[0].clientY - this.touches[1].clientY;
+                        const distance = Math.sqrt(dx * dx + dy * dy);
+                        
+                        const deltaDistance = distance - this.lastTouchDistance;
+                        const currentDistance = this.camera.position.length();
+                        const newDistance = currentDistance - deltaDistance * 2;
+                        const clampedDistance = Math.max(100, Math.min(2000, newDistance));
+                        
+                        this.camera.position.normalize().multiplyScalar(clampedDistance);
+                        this.lastTouchDistance = distance;
+                    }
+                });
+                
+                canvas.addEventListener('touchend', (e) => {
+                    e.preventDefault();
+                    this.touches = Array.from(e.touches);
+                    
+                    if (this.touches.length === 0) {
+                        this.mouse.isDown = false;
+                    } else if (this.touches.length === 1) {
+                        // Switch back to single touch rotation
+                        this.mouse.isDown = true;
+                        this.mouse.x = this.touches[0].clientX;
+                        this.mouse.y = this.touches[0].clientY;
+                    }
+                });
+                
+                canvas.addEventListener('touchcancel', (e) => {
+                    e.preventDefault();
+                    this.mouse.isDown = false;
+                    this.touches = [];
+                });
+            }
+            
+            updateCameraPosition() {
+                const distance = this.camera.position.length();
+                this.camera.position.x = distance * Math.cos(this.cameraAngle.x) * Math.sin(this.cameraAngle.y);
+                this.camera.position.y = distance * Math.sin(this.cameraAngle.x);
+                this.camera.position.z = distance * Math.cos(this.cameraAngle.x) * Math.cos(this.cameraAngle.y);
+                this.camera.lookAt(0, 0, 0);
+            }
+            
+            setupControls() {
+                const controls = {
+                    rotationSpeed: document.getElementById('rotationSpeed'),
+                    spiralTight: document.getElementById('spiralTight'),
+                    particleCount: document.getElementById('particleCount'),
+                    armCount: document.getElementById('armCount'),
+                    blackHoleMass: document.getElementById('blackHoleMass')
+                };
+                
+                const values = {
+                    rotationValue: document.getElementById('rotationValue'),
+                    spiralValue: document.getElementById('spiralValue'),
+                    countValue: document.getElementById('countValue'),
+                    armValue: document.getElementById('armValue'),
+                    massValue: document.getElementById('massValue')
+                };
+                
+                controls.rotationSpeed.addEventListener('input', (e) => {
+                    this.params.rotationSpeed = parseFloat(e.target.value);
+                    values.rotationValue.textContent = e.target.value;
+                });
+                
+                controls.spiralTight.addEventListener('input', (e) => {
+                    this.params.spiralTightness = parseFloat(e.target.value);
+                    values.spiralValue.textContent = e.target.value;
+                    this.createGalaxy();
+                });
+                
+                controls.particleCount.addEventListener('input', (e) => {
+                    this.params.particleCount = parseInt(e.target.value);
+                    values.countValue.textContent = e.target.value;
+                    this.createGalaxy();
+                });
+                
+                controls.armCount.addEventListener('input', (e) => {
+                    this.params.armCount = parseInt(e.target.value);
+                    values.armValue.textContent = e.target.value;
+                    this.createGalaxy();
+                });
+                
+                controls.blackHoleMass.addEventListener('input', (e) => {
+                    this.params.blackHoleMass = parseFloat(e.target.value);
+                    values.massValue.textContent = e.target.value;
+                    this.createBlackHole();
+                });
+            }
+            
+            animate() {
+                requestAnimationFrame(() => this.animate());
+                
+                this.updateParticles();
+                this.renderer.render(this.scene, this.camera);
+            }
+            
+            onWindowResize() {
+                this.camera.aspect = window.innerWidth / window.innerHeight;
+                this.camera.updateProjectionMatrix();
+                this.renderer.setSize(window.innerWidth, window.innerHeight);
+            }
+        }
+        
+        // Initialize simulation
+        const galaxy = new GalaxySimulation();
+        
+        // Handle window resize
+        window.addEventListener('resize', () => galaxy.onWindowResize());
+    </script>
+</body>
+</html>
