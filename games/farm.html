@@ -1,0 +1,1158 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MooToDo</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pixi.js/7.3.2/pixi.min.js"></script>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background: #2c5530;
+            font-family: 'Arial', sans-serif;
+            overflow: hidden;
+        }
+        #gameContainer {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+        }
+        #ui {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            color: white;
+            z-index: 10;
+            background: rgba(0,0,0,0.7);
+            padding: 10px;
+            border-radius: 8px;
+        }
+        #taskDialog {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: #8b4513;
+            border: 4px solid #654321;
+            border-radius: 12px;
+            padding: 20px;
+            color: white;
+            display: none;
+            z-index: 20;
+            text-align: center;
+            min-width: 400px;
+            min-height: 300px;
+        }
+        #taskMiniGame {
+            width: 350px;
+            height: 250px;
+            background: #2c5530;
+            border: 2px solid #654321;
+            border-radius: 8px;
+            margin: 10px auto;
+            position: relative;
+            overflow: hidden;
+            cursor: grab;
+        }
+        #taskMiniGame:active {
+            cursor: grabbing;
+        }
+        .draggable {
+            position: absolute;
+            cursor: grab;
+            user-select: none;
+            touch-action: none;
+        }
+        .draggable:active {
+            cursor: grabbing;
+        }
+        .dirt {
+            width: 20px;
+            height: 20px;
+            background: #8B4513;
+            border-radius: 50%;
+        }
+        .broom {
+            width: 15px;
+            height: 40px;
+            background: linear-gradient(to bottom, #8B4513 0%, #8B4513 70%, #DAA520 70%, #DAA520 100%);
+            border-radius: 3px;
+        }
+        .food-pellet {
+            width: 12px;
+            height: 12px;
+            background: #FF6347;
+            border-radius: 50%;
+        }
+        .food-bowl {
+            width: 40px;
+            height: 30px;
+            background: #654321;
+            border-radius: 50%;
+            border: 3px solid #8B4513;
+        }
+        .thermometer {
+            width: 20px;
+            height: 80px;
+            background: #C0C0C0;
+            border-radius: 10px;
+            border: 2px solid #808080;
+        }
+        .stethoscope {
+            width: 60px;
+            height: 60px;
+            background: #000;
+            border-radius: 50% 50% 50% 50% / 60% 60% 40% 40%;
+        }
+        .tool {
+            width: 30px;
+            height: 30px;
+            background: #696969;
+            border-radius: 3px;
+        }
+        .tool-slot {
+            width: 35px;
+            height: 35px;
+            border: 2px dashed #FFD700;
+            border-radius: 5px;
+        }
+        #reportDialog {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: #8b0000;
+            border: 4px solid #654321;
+            border-radius: 12px;
+            padding: 20px;
+            color: white;
+            display: none;
+            z-index: 30;
+            text-align: center;
+        }
+        .button {
+            background: #654321;
+            color: white;
+            border: none;
+            padding: 10px 15px;
+            margin: 5px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        .button:hover {
+            background: #7d5a32;
+        }
+        #gameOver {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0,0,0,0.9);
+            color: white;
+            padding: 30px;
+            border-radius: 15px;
+            text-align: center;
+            display: none;
+            z-index: 40;
+        }
+        #touchControls {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            z-index: 10;
+        }
+        #dpad {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            grid-template-rows: 1fr 1fr 1fr;
+            gap: 5px;
+            width: 150px;
+            height: 150px;
+        }
+        .dpad-btn {
+            background: rgba(255,255,255,0.3);
+            border: 2px solid rgba(255,255,255,0.6);
+            border-radius: 8px;
+            color: white;
+            font-size: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            user-select: none;
+            touch-action: manipulation;
+        }
+        .dpad-btn:active {
+            background: rgba(255,255,255,0.6);
+        }
+        .dpad-btn.empty {
+            background: transparent;
+            border: none;
+        }
+        .progress-bar {
+            width: 100%;
+            height: 20px;
+            background: #333;
+            border-radius: 10px;
+            margin: 10px 0;
+            overflow: hidden;
+        }
+        .progress-fill {
+            height: 100%;
+            background: #4CAF50;
+            transition: width 0.3s ease;
+            border-radius: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div id="gameContainer">
+        <div id="ui">
+            <h3>🐄 MooToDo Farm</h3>
+            <div id="playerInfo">
+                <p>Role: <span id="roleText">Farm Worker</span></p>
+                <p>Supplies: <span id="suppliesCount">10</span>/10</p>
+                <p>Tasks: <span id="taskCount">0</span>/5</p>
+            </div>
+            <button class="button" onclick="reportTheft()">🚨 Report Theft</button>
+        </div>
+
+        <div id="taskDialog">
+            <h3 id="taskTitle">Complete Task</h3>
+            <p id="taskDescription">Drag and drop to complete this task!</p>
+            <div id="taskMiniGame"></div>
+            <div id="taskProgress" style="margin: 10px 0;">
+                <div class="progress-bar">
+                    <div class="progress-fill" id="taskProgressFill" style="width: 0%"></div>
+                </div>
+                <p id="taskProgressText">Progress: 0%</p>
+            </div>
+            <div style="margin-top: 15px;">
+                <button class="button" id="taskCompleteBtn" onclick="completeTask()" disabled>Task Complete!</button>
+                <button class="button" onclick="closeTaskDialog()">Cancel</button>
+            </div>
+        </div>
+
+        <div id="reportDialog">
+            <h3>🚨 Report Theft!</h3>
+            <p>Who do you think is the thief?</p>
+            <div id="playerList"></div>
+            <button class="button" onclick="closeReportDialog()">Cancel</button>
+        </div>
+
+        <div id="gameOver">
+            <h2 id="gameOverTitle">Game Over!</h2>
+            <p id="gameOverText"></p>
+            <button class="button" onclick="restartGame()">Play Again</button>
+        </div>
+
+        <div id="touchControls">
+            <div id="dpad">
+                <div class="dpad-btn empty"></div>
+                <div class="dpad-btn" id="upBtn">↑</div>
+                <div class="dpad-btn empty"></div>
+                <div class="dpad-btn" id="leftBtn">←</div>
+                <div class="dpad-btn empty"></div>
+                <div class="dpad-btn" id="rightBtn">→</div>
+                <div class="dpad-btn empty"></div>
+                <div class="dpad-btn" id="downBtn">↓</div>
+                <div class="dpad-btn empty"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Game state
+        let app, stage, player, players = [], tasks = [], supplies = [];
+        let fogOfWar, fogGraphics;
+        let currentMiniGame = null;
+        let gameState = {
+            isThief: Math.random() < 0.3, // 30% chance to be thief
+            suppliesRemaining: 10,
+            tasksCompleted: 0,
+            totalTasks: 5,
+            gameOver: false,
+            taskInProgress: null,
+            visibilityRadius: 80,
+            fogOpacity: 0.85
+        };
+
+        // Initialize PIXI
+        function initGame() {
+            app = new PIXI.Application({
+                width: window.innerWidth,
+                height: window.innerHeight,
+                backgroundColor: 0x4a7c59
+            });
+            document.getElementById('gameContainer').appendChild(app.view);
+
+            stage = app.stage;
+            
+            createFarmMap();
+            createPlayer();
+            createNPCs();
+            createTasks();
+            createSupplies();
+            createFogOfWar();
+            
+            updateUI();
+            
+            // Game loop
+            app.ticker.add(gameLoop);
+        }
+
+        function createFarmMap() {
+            // Create farm background
+            const farm = new PIXI.Graphics();
+            
+            // Main farm area
+            farm.beginFill(0x228b22);
+            farm.drawRect(0, 0, app.screen.width, app.screen.height);
+            
+            // Barn
+            farm.beginFill(0x8b4513);
+            farm.drawRect(100, 100, 200, 150);
+            farm.beginFill(0x654321);
+            farm.drawPolygon([100, 100, 200, 50, 300, 100]);
+            
+            // Animal pens
+            farm.lineStyle(4, 0x654321);
+            farm.beginFill(0x90ee90);
+            farm.drawRect(400, 100, 150, 100); // Pig pen
+            farm.drawRect(600, 100, 150, 100); // Chicken coop
+            farm.drawRect(400, 250, 150, 100); // Cow pasture
+            
+            // Equipment shed
+            farm.beginFill(0x696969);
+            farm.drawRect(800, 300, 120, 100);
+            
+            stage.addChild(farm);
+            
+            // Add labels
+            addLabel('🏠 Barn', 150, 80);
+            addLabel('🐷 Pig Pen', 430, 80);
+            addLabel('🐔 Chicken Coop', 630, 80);
+            addLabel('🐄 Cow Pasture', 430, 230);
+            addLabel('🔧 Equipment', 830, 280);
+        }
+
+        function addLabel(text, x, y) {
+            const label = new PIXI.Text(text, {
+                fontSize: 16,
+                fill: 0xffffff,
+                stroke: 0x000000,
+                strokeThickness: 2
+            });
+            label.x = x;
+            label.y = y;
+            stage.addChild(label);
+        }
+
+        function createPlayer() {
+            player = new PIXI.Graphics();
+            player.beginFill(gameState.isThief ? 0xff0000 : 0x0066cc);
+            player.drawCircle(0, 0, 15);
+            player.beginFill(0xffffff);
+            player.drawCircle(-5, -5, 3);
+            player.drawCircle(5, -5, 3);
+            player.x = 50;
+            player.y = 300;
+            player.speed = 3;
+            
+            stage.addChild(player);
+            
+            // Movement - keyboard and touch
+            const keys = {};
+            const touchKeys = {};
+            
+            // Keyboard controls
+            window.addEventListener('keydown', (e) => keys[e.key] = true);
+            window.addEventListener('keyup', (e) => keys[e.key] = false);
+            
+            // Touch controls
+            function setupTouchControls() {
+                const buttons = {
+                    upBtn: 'ArrowUp',
+                    downBtn: 'ArrowDown',
+                    leftBtn: 'ArrowLeft',
+                    rightBtn: 'ArrowRight'
+                };
+                
+                Object.entries(buttons).forEach(([btnId, keyCode]) => {
+                    const btn = document.getElementById(btnId);
+                    
+                    btn.addEventListener('touchstart', (e) => {
+                        e.preventDefault();
+                        touchKeys[keyCode] = true;
+                    });
+                    
+                    btn.addEventListener('touchend', (e) => {
+                        e.preventDefault();
+                        touchKeys[keyCode] = false;
+                    });
+                    
+                    btn.addEventListener('mousedown', (e) => {
+                        e.preventDefault();
+                        touchKeys[keyCode] = true;
+                    });
+                    
+                    btn.addEventListener('mouseup', (e) => {
+                        e.preventDefault();
+                        touchKeys[keyCode] = false;
+                    });
+                    
+                    btn.addEventListener('mouseleave', (e) => {
+                        touchKeys[keyCode] = false;
+                    });
+                });
+            }
+            
+            setupTouchControls();
+            
+            player.update = function() {
+                if (gameState.gameOver) return;
+                
+                // Combine keyboard and touch inputs
+                const isUp = keys['ArrowUp'] || keys['w'] || touchKeys['ArrowUp'];
+                const isDown = keys['ArrowDown'] || keys['s'] || touchKeys['ArrowDown'];
+                const isLeft = keys['ArrowLeft'] || keys['a'] || touchKeys['ArrowLeft'];
+                const isRight = keys['ArrowRight'] || keys['d'] || touchKeys['ArrowRight'];
+                
+                if (isUp) this.y -= this.speed;
+                if (isDown) this.y += this.speed;
+                if (isLeft) this.x -= this.speed;
+                if (isRight) this.x += this.speed;
+                
+                // Keep player in bounds
+                this.x = Math.max(15, Math.min(app.screen.width - 15, this.x));
+                this.y = Math.max(15, Math.min(app.screen.height - 15, this.y));
+            };
+        }
+
+        function createNPCs() {
+            const colors = [0x00ff00, 0xff00ff, 0xffff00, 0x00ffff, 0xff8000];
+            for (let i = 0; i < 4; i++) {
+                const npc = new PIXI.Graphics();
+                npc.beginFill(colors[i]);
+                npc.drawCircle(0, 0, 12);
+                npc.beginFill(0xffffff);
+                npc.drawCircle(-4, -4, 2);
+                npc.drawCircle(4, -4, 2);
+                npc.x = Math.random() * (app.screen.width - 100) + 50;
+                npc.y = Math.random() * (app.screen.height - 100) + 50;
+                npc.name = `Player${i + 2}`;
+                npc.isThief = Math.random() < 0.2; // 20% chance for NPCs
+                
+                // Simple AI movement
+                npc.targetX = npc.x;
+                npc.targetY = npc.y;
+                npc.moveTimer = 0;
+                
+                npc.update = function() {
+                    if (gameState.gameOver) return;
+                    
+                    this.moveTimer--;
+                    if (this.moveTimer <= 0) {
+                        this.targetX = Math.random() * (app.screen.width - 100) + 50;
+                        this.targetY = Math.random() * (app.screen.height - 100) + 50;
+                        this.moveTimer = 120 + Math.random() * 240;
+                    }
+                    
+                    const dx = this.targetX - this.x;
+                    const dy = this.targetY - this.y;
+                    const dist = Math.sqrt(dx * dx + dy * dy);
+                    
+                    if (dist > 5) {
+                        this.x += (dx / dist) * 1.5;
+                        this.y += (dy / dist) * 1.5;
+                    }
+                };
+                
+                players.push(npc);
+                stage.addChild(npc);
+            }
+        }
+
+        function createTasks() {
+            const taskLocations = [
+                { x: 475, y: 150, type: 'sweep', name: 'Sweep Pig Pen' },
+                { x: 675, y: 150, type: 'feed', name: 'Feed Chickens' },
+                { x: 475, y: 300, type: 'vitals', name: 'Check Cow Vitals' },
+                { x: 200, y: 175, type: 'equipment', name: 'Check Barn Equipment' },
+                { x: 860, y: 350, type: 'use', name: 'Use Farm Tools' }
+            ];
+            
+            taskLocations.forEach(taskData => {
+                const task = new PIXI.Graphics();
+                task.beginFill(0xffd700);
+                task.lineStyle(2, 0xffaa00);
+                // Draw a star shape manually
+                const points = [];
+                for (let i = 0; i < 10; i++) {
+                    const angle = (i * Math.PI) / 5;
+                    const radius = i % 2 === 0 ? 15 : 8;
+                    points.push(Math.cos(angle) * radius, Math.sin(angle) * radius);
+                }
+                task.drawPolygon(points);
+                task.x = taskData.x;
+                task.y = taskData.y;
+                task.data = taskData;
+                task.completed = false;
+                task.interactive = true;
+                task.buttonMode = true;
+                
+                task.on('pointerdown', () => {
+                    if (!gameState.gameOver && !task.completed && getDistance(player, task) < 50) {
+                        startTask(task);
+                    }
+                });
+                
+                tasks.push(task);
+                stage.addChild(task);
+            });
+        }
+
+        function createFogOfWar() {
+            // Create fog of war container
+            fogOfWar = new PIXI.Container();
+            
+            // Create the fog graphics
+            fogGraphics = new PIXI.Graphics();
+            
+            // Create a render texture for the fog mask
+            const fogTexture = PIXI.RenderTexture.create({
+                width: app.screen.width,
+                height: app.screen.height
+            });
+            
+            // Create the fog sprite
+            const fogSprite = new PIXI.Sprite(fogTexture);
+            fogSprite.alpha = gameState.fogOpacity;
+            
+            fogOfWar.addChild(fogSprite);
+            stage.addChild(fogOfWar);
+            
+            // Store references for updates
+            fogOfWar.texture = fogTexture;
+            fogOfWar.sprite = fogSprite;
+            
+            updateFogOfWar();
+        }
+
+        function updateFogOfWar() {
+            if (!fogOfWar || !fogOfWar.texture) return;
+            
+            // Clear the fog graphics
+            fogGraphics.clear();
+            
+            // Fill the entire screen with fog
+            fogGraphics.beginFill(0x000000, 1);
+            fogGraphics.drawRect(0, 0, app.screen.width, app.screen.height);
+            fogGraphics.endFill();
+            
+            // Create visibility circles (punch holes in the fog)
+            const visibleAreas = [];
+            
+            // Player visibility
+            visibleAreas.push({
+                x: player.x,
+                y: player.y,
+                radius: gameState.visibilityRadius
+            });
+            
+            // Other players visibility (smaller radius)
+            players.forEach(npc => {
+                visibleAreas.push({
+                    x: npc.x,
+                    y: npc.y,
+                    radius: gameState.visibilityRadius * 0.6
+                });
+            });
+            
+            // Task locations have small visibility when nearby
+            tasks.forEach(task => {
+                if (!task.completed) {
+                    const distToPlayer = getDistance(player, task);
+                    if (distToPlayer < gameState.visibilityRadius * 1.5) {
+                        visibleAreas.push({
+                            x: task.x,
+                            y: task.y,
+                            radius: 25
+                        });
+                    }
+                }
+            });
+            
+            // Cut out visible areas from the fog
+            visibleAreas.forEach(area => {
+                fogGraphics.beginHole();
+                fogGraphics.drawCircle(area.x, area.y, area.radius);
+                fogGraphics.endHole();
+            });
+            
+            // Render the fog to the texture
+            app.renderer.render(fogGraphics, { renderTexture: fogOfWar.texture, clear: true });
+        }
+
+        function createSupplies() {
+            const supplyLocations = [
+                { x: 120, y: 200, type: 'hay' },
+                { x: 280, y: 200, type: 'feed' },
+                { x: 450, y: 80, type: 'medicine' },
+                { x: 650, y: 80, type: 'seeds' },
+                { x: 850, y: 280, type: 'tools' }
+            ];
+            
+            supplyLocations.forEach((supplyData, index) => {
+                const supply = new PIXI.Graphics();
+                supply.beginFill(0x8b4513);
+                supply.drawRect(-10, -10, 20, 20);
+                supply.beginFill(0xffd700);
+                supply.drawRect(-8, -8, 16, 16);
+                supply.x = supplyData.x;
+                supply.y = supplyData.y;
+                supply.data = supplyData;
+                supply.stolen = false;
+                
+                supplies.push(supply);
+                stage.addChild(supply);
+            });
+        }
+
+        function startTask(task) {
+            gameState.taskInProgress = task;
+            document.getElementById('taskTitle').textContent = task.data.name;
+            
+            let description = '';
+            
+            switch(task.data.type) {
+                case 'sweep':
+                    description = 'Drag the broom to sweep up all the dirt and bedding!';
+                    break;
+                case 'feed':
+                    description = 'Drag the food pellets into the feeding bowls!';
+                    break;
+                case 'vitals':
+                    description = 'Use the stethoscope and thermometer on the animal!';
+                    break;
+                case 'equipment':
+                    description = 'Drag the inspection tools to check the equipment!';
+                    break;
+                case 'use':
+                    description = 'Organize the tools by dragging them to their proper slots!';
+                    break;
+            }
+            
+            document.getElementById('taskDescription').textContent = description;
+            document.getElementById('taskProgressFill').style.width = '0%';
+            document.getElementById('taskProgressText').textContent = 'Progress: 0%';
+            document.getElementById('taskCompleteBtn').disabled = true;
+            
+            createMiniGame(task.data.type);
+            document.getElementById('taskDialog').style.display = 'block';
+        }
+
+        function createMiniGame(taskType) {
+            const gameArea = document.getElementById('taskMiniGame');
+            gameArea.innerHTML = '';
+            
+            currentMiniGame = {
+                type: taskType,
+                progress: 0,
+                elements: [],
+                isDragging: false,
+                dragElement: null,
+                completed: false
+            };
+            
+            switch(taskType) {
+                case 'sweep':
+                    createSweepingGame(gameArea);
+                    break;
+                case 'feed':
+                    createFeedingGame(gameArea);
+                    break;
+                case 'vitals':
+                    createVitalsGame(gameArea);
+                    break;
+                case 'equipment':
+                    createEquipmentGame(gameArea);
+                    break;
+                case 'use':
+                    createToolGame(gameArea);
+                    break;
+            }
+        }
+
+        function createSweepingGame(gameArea) {
+            // Create dirt piles
+            for (let i = 0; i < 8; i++) {
+                const dirt = document.createElement('div');
+                dirt.className = 'dirt';
+                dirt.style.left = Math.random() * 320 + 'px';
+                dirt.style.top = Math.random() * 220 + 'px';
+                dirt.dataset.cleaned = 'false';
+                gameArea.appendChild(dirt);
+                currentMiniGame.elements.push(dirt);
+            }
+            
+            // Create broom
+            const broom = document.createElement('div');
+            broom.className = 'broom draggable';
+            broom.style.left = '10px';
+            broom.style.top = '200px';
+            gameArea.appendChild(broom);
+            
+            makeDraggable(broom, (x, y) => {
+                // Check if broom touches dirt
+                currentMiniGame.elements.forEach(dirt => {
+                    if (dirt.dataset.cleaned === 'false') {
+                        const dirtRect = dirt.getBoundingClientRect();
+                        const broomRect = broom.getBoundingClientRect();
+                        
+                        if (isColliding(broomRect, dirtRect)) {
+                            dirt.style.opacity = '0.3';
+                            dirt.dataset.cleaned = 'true';
+                            updateTaskProgress();
+                        }
+                    }
+                });
+            });
+        }
+
+        function createFeedingGame(gameArea) {
+            // Create food bowls
+            for (let i = 0; i < 4; i++) {
+                const bowl = document.createElement('div');
+                bowl.className = 'food-bowl';
+                bowl.style.left = (i * 80 + 20) + 'px';
+                bowl.style.top = '200px';
+                bowl.dataset.filled = 'false';
+                gameArea.appendChild(bowl);
+            }
+            
+            // Create food pellets
+            for (let i = 0; i < 8; i++) {
+                const pellet = document.createElement('div');
+                pellet.className = 'food-pellet draggable';
+                pellet.style.left = Math.random() * 300 + 'px';
+                pellet.style.top = Math.random() * 100 + 20 + 'px';
+                gameArea.appendChild(pellet);
+                currentMiniGame.elements.push(pellet);
+                
+                makeDraggable(pellet, (x, y) => {
+                    // Check if pellet is in bowl
+                    const bowls = gameArea.querySelectorAll('.food-bowl');
+                    bowls.forEach(bowl => {
+                        if (bowl.dataset.filled === 'false') {
+                            const bowlRect = bowl.getBoundingClientRect();
+                            const pelletRect = pellet.getBoundingClientRect();
+                            
+                            if (isColliding(pelletRect, bowlRect)) {
+                                pellet.style.display = 'none';
+                                bowl.dataset.filled = 'true';
+                                bowl.style.background = '#8B4513';
+                                updateTaskProgress();
+                            }
+                        }
+                    });
+                });
+            }
+        }
+
+        function createVitalsGame(gameArea) {
+            // Create animal (represented as a circle)
+            const animal = document.createElement('div');
+            animal.style.width = '100px';
+            animal.style.height = '100px';
+            animal.style.background = '#DEB887';
+            animal.style.borderRadius = '50%';
+            animal.style.position = 'absolute';
+            animal.style.left = '125px';
+            animal.style.top = '75px';
+            animal.dataset.checked = '0';
+            gameArea.appendChild(animal);
+            
+            // Create stethoscope
+            const stethoscope = document.createElement('div');
+            stethoscope.className = 'stethoscope draggable';
+            stethoscope.style.left = '50px';
+            stethoscope.style.top = '20px';
+            gameArea.appendChild(stethoscope);
+            
+            // Create thermometer
+            const thermometer = document.createElement('div');
+            thermometer.className = 'thermometer draggable';
+            thermometer.style.left = '280px';
+            thermometer.style.top = '20px';
+            gameArea.appendChild(thermometer);
+            
+            [stethoscope, thermometer].forEach(tool => {
+                makeDraggable(tool, (x, y) => {
+                    const animalRect = animal.getBoundingClientRect();
+                    const toolRect = tool.getBoundingClientRect();
+                    
+                    if (isColliding(toolRect, animalRect)) {
+                        tool.style.opacity = '0.5';
+                        const currentChecked = parseInt(animal.dataset.checked);
+                        if (currentChecked < 2) {
+                            animal.dataset.checked = currentChecked + 1;
+                            updateTaskProgress();
+                        }
+                    }
+                });
+            });
+        }
+
+        function createEquipmentGame(gameArea) {
+            // Create equipment pieces
+            const equipmentItems = ['gear', 'pipe', 'bolt', 'wire'];
+            equipmentItems.forEach((item, i) => {
+                const equipment = document.createElement('div');
+                equipment.style.width = '40px';
+                equipment.style.height = '40px';
+                equipment.style.background = '#696969';
+                equipment.style.position = 'absolute';
+                equipment.style.left = (i * 60 + 50) + 'px';
+                equipment.style.top = '150px';
+                equipment.style.borderRadius = '5px';
+                equipment.dataset.inspected = 'false';
+                gameArea.appendChild(equipment);
+                currentMiniGame.elements.push(equipment);
+            });
+            
+            // Create inspection tool
+            const inspector = document.createElement('div');
+            inspector.className = 'draggable';
+            inspector.style.width = '30px';
+            inspector.style.height = '30px';
+            inspector.style.background = '#FFD700';
+            inspector.style.borderRadius = '50%';
+            inspector.style.left = '160px';
+            inspector.style.top = '50px';
+            gameArea.appendChild(inspector);
+            
+            makeDraggable(inspector, (x, y) => {
+                currentMiniGame.elements.forEach(equipment => {
+                    if (equipment.dataset.inspected === 'false') {
+                        const equipRect = equipment.getBoundingClientRect();
+                        const inspectorRect = inspector.getBoundingClientRect();
+                        
+                        if (isColliding(inspectorRect, equipRect)) {
+                            equipment.style.border = '2px solid #00FF00';
+                            equipment.dataset.inspected = 'true';
+                            updateTaskProgress();
+                        }
+                    }
+                });
+            });
+        }
+
+        function createToolGame(gameArea) {
+            // Create tool slots
+            const tools = ['hammer', 'wrench', 'screwdriver'];
+            tools.forEach((tool, i) => {
+                const slot = document.createElement('div');
+                slot.className = 'tool-slot';
+                slot.style.left = (i * 80 + 50) + 'px';
+                slot.style.top = '180px';
+                slot.dataset.tool = tool;
+                slot.dataset.filled = 'false';
+                gameArea.appendChild(slot);
+            });
+            
+            // Create tools (scrambled)
+            const scrambledTools = [...tools].sort(() => Math.random() - 0.5);
+            scrambledTools.forEach((tool, i) => {
+                const toolElement = document.createElement('div');
+                toolElement.className = 'tool draggable';
+                toolElement.style.left = (i * 80 + 60) + 'px';
+                toolElement.style.top = '50px';
+                toolElement.dataset.tool = tool;
+                gameArea.appendChild(toolElement);
+                
+                makeDraggable(toolElement, (x, y) => {
+                    const slots = gameArea.querySelectorAll('.tool-slot');
+                    slots.forEach(slot => {
+                        if (slot.dataset.filled === 'false') {
+                            const slotRect = slot.getBoundingClientRect();
+                            const toolRect = toolElement.getBoundingClientRect();
+                            
+                            if (isColliding(toolRect, slotRect) && slot.dataset.tool === toolElement.dataset.tool) {
+                                toolElement.style.left = slot.style.left;
+                                toolElement.style.top = slot.style.top;
+                                slot.dataset.filled = 'true';
+                                toolElement.style.pointerEvents = 'none';
+                                updateTaskProgress();
+                            }
+                        }
+                    });
+                });
+            });
+        }
+
+        function makeDraggable(element, onDrag) {
+            let isDragging = false;
+            let startX, startY, offsetX, offsetY;
+            
+            function startDrag(e) {
+                isDragging = true;
+                const event = e.touches ? e.touches[0] : e;
+                const rect = element.getBoundingClientRect();
+                const parentRect = element.parentElement.getBoundingClientRect();
+                
+                startX = event.clientX;
+                startY = event.clientY;
+                offsetX = event.clientX - rect.left;
+                offsetY = event.clientY - rect.top;
+                
+                element.style.zIndex = '1000';
+                e.preventDefault();
+            }
+            
+            function drag(e) {
+                if (!isDragging) return;
+                
+                const event = e.touches ? e.touches[0] : e;
+                const parentRect = element.parentElement.getBoundingClientRect();
+                
+                let newX = event.clientX - parentRect.left - offsetX;
+                let newY = event.clientY - parentRect.top - offsetY;
+                
+                // Keep within bounds
+                newX = Math.max(0, Math.min(newX, parentRect.width - element.offsetWidth));
+                newY = Math.max(0, Math.min(newY, parentRect.height - element.offsetHeight));
+                
+                element.style.left = newX + 'px';
+                element.style.top = newY + 'px';
+                
+                if (onDrag) onDrag(newX, newY);
+                e.preventDefault();
+            }
+            
+            function endDrag() {
+                isDragging = false;
+                element.style.zIndex = '1';
+            }
+            
+            // Mouse events
+            element.addEventListener('mousedown', startDrag);
+            document.addEventListener('mousemove', drag);
+            document.addEventListener('mouseup', endDrag);
+            
+            // Touch events
+            element.addEventListener('touchstart', startDrag);
+            document.addEventListener('touchmove', drag);
+            document.addEventListener('touchend', endDrag);
+        }
+
+        function isColliding(rect1, rect2) {
+            return !(rect1.right < rect2.left || 
+                     rect1.left > rect2.right || 
+                     rect1.bottom < rect2.top || 
+                     rect1.top > rect2.bottom);
+        }
+
+        function updateTaskProgress() {
+            if (!currentMiniGame) return;
+            
+            let completed = 0;
+            let total = 0;
+            
+            switch(currentMiniGame.type) {
+                case 'sweep':
+                    total = currentMiniGame.elements.length;
+                    completed = currentMiniGame.elements.filter(dirt => dirt.dataset.cleaned === 'true').length;
+                    break;
+                case 'feed':
+                    total = 4; // number of bowls
+                    completed = document.querySelectorAll('.food-bowl[data-filled="true"]').length;
+                    break;
+                case 'vitals':
+                    total = 2; // stethoscope + thermometer
+                    completed = parseInt(document.querySelector('#taskMiniGame div[data-checked]')?.dataset.checked || 0);
+                    break;
+                case 'equipment':
+                    total = currentMiniGame.elements.length;
+                    completed = currentMiniGame.elements.filter(eq => eq.dataset.inspected === 'true').length;
+                    break;
+                case 'use':
+                    total = 3; // number of tools
+                    completed = document.querySelectorAll('.tool-slot[data-filled="true"]').length;
+                    break;
+            }
+            
+            const progress = (completed / total) * 100;
+            document.getElementById('taskProgressFill').style.width = progress + '%';
+            document.getElementById('taskProgressText').textContent = `Progress: ${Math.round(progress)}%`;
+            
+            if (progress >= 100) {
+                document.getElementById('taskCompleteBtn').disabled = false;
+                currentMiniGame.completed = true;
+            }
+        }
+
+        function completeTask() {
+            if (!gameState.taskInProgress || !currentMiniGame?.completed) return;
+            
+            const task = gameState.taskInProgress;
+            task.completed = true;
+            task.tint = 0x666666;
+            task.interactive = false;
+            
+            gameState.tasksCompleted++;
+            gameState.taskInProgress = null;
+            currentMiniGame = null;
+            
+            closeTaskDialog();
+            updateUI();
+            
+            // Check win condition
+            if (gameState.tasksCompleted >= gameState.totalTasks && gameState.suppliesRemaining > 5) {
+                endGame(true, "Farm Workers Win!\nAll tasks completed and supplies protected!");
+            }
+        }
+
+        function closeTaskDialog() {
+            document.getElementById('taskDialog').style.display = 'none';
+            gameState.taskInProgress = null;
+            currentMiniGame = null;
+        }
+
+        function reportTheft() {
+            if (gameState.gameOver) return;
+            
+            const playerListDiv = document.getElementById('playerList');
+            playerListDiv.innerHTML = '';
+            
+            players.forEach(npc => {
+                const button = document.createElement('button');
+                button.className = 'button';
+                button.textContent = npc.name;
+                button.onclick = () => accusePlayer(npc);
+                playerListDiv.appendChild(button);
+            });
+            
+            document.getElementById('reportDialog').style.display = 'block';
+        }
+
+        function accusePlayer(accusedPlayer) {
+            closeReportDialog();
+            
+            if (accusedPlayer.isThief) {
+                endGame(true, `Correct! ${accusedPlayer.name} was the thief!\nFarm Workers Win!`);
+            } else {
+                endGame(false, `Wrong! ${accusedPlayer.name} was innocent.\nThieves escape with the supplies!`);
+            }
+        }
+
+        function closeReportDialog() {
+            document.getElementById('reportDialog').style.display = 'none';
+        }
+
+        function gameLoop() {
+            if (gameState.gameOver) return;
+            
+            player.update();
+            players.forEach(npc => npc.update());
+            
+            // Update fog of war
+            updateFogOfWar();
+            
+            // Thief behavior - steal supplies
+            if (gameState.isThief && Math.random() < 0.001) {
+                stealSupply();
+            }
+            
+            // NPC thieves
+            players.forEach(npc => {
+                if (npc.isThief && Math.random() < 0.0005) {
+                    stealSupply();
+                }
+            });
+            
+            // Check lose condition
+            if (gameState.suppliesRemaining <= 0) {
+                endGame(false, "Thieves Win!\nAll supplies have been stolen!");
+            }
+        }
+
+        function stealSupply() {
+            const availableSupplies = supplies.filter(s => !s.stolen);
+            if (availableSupplies.length > 0) {
+                const supply = availableSupplies[Math.floor(Math.random() * availableSupplies.length)];
+                supply.stolen = true;
+                supply.alpha = 0.3;
+                gameState.suppliesRemaining--;
+                updateUI();
+            }
+        }
+
+        function updateUI() {
+            document.getElementById('roleText').textContent = gameState.isThief ? 'Thief' : 'Farm Worker';
+            document.getElementById('suppliesCount').textContent = gameState.suppliesRemaining;
+            document.getElementById('taskCount').textContent = gameState.tasksCompleted;
+            
+            // Update role text color
+            const roleElement = document.getElementById('roleText');
+            roleElement.style.color = gameState.isThief ? '#ff6b6b' : '#4ecdc4';
+        }
+
+        function endGame(won, message) {
+            gameState.gameOver = true;
+            document.getElementById('gameOverTitle').textContent = won ? 'Victory!' : 'Defeat!';
+            document.getElementById('gameOverText').textContent = message;
+            document.getElementById('gameOver').style.display = 'block';
+        }
+
+        function restartGame() {
+            // Reset game state
+            gameState = {
+                isThief: Math.random() < 0.3,
+                suppliesRemaining: 10,
+                tasksCompleted: 0,
+                totalTasks: 5,
+                gameOver: false,
+                taskInProgress: null
+            };
+            
+            // Clear stage
+            stage.removeChildren();
+            tasks.length = 0;
+            supplies.length = 0;
+            players.length = 0;
+            
+            // Reset fog references
+            fogOfWar = null;
+            fogGraphics = null;
+            
+            // Hide dialogs
+            document.getElementById('gameOver').style.display = 'none';
+            closeTaskDialog();
+            closeReportDialog();
+            
+            // Recreate game
+            createFarmMap();
+            createPlayer();
+            createNPCs();
+            createTasks();
+            createSupplies();
+            createFogOfWar();
+            updateUI();
+        }
+
+        function getDistance(obj1, obj2) {
+            const dx = obj1.x - obj2.x;
+            const dy = obj1.y - obj2.y;
+            return Math.sqrt(dx * dx + dy * dy);
+        }
+
+        // Start the game
+        initGame();
+    </script>
+</body>
+</html>
