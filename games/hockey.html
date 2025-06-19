@@ -1,0 +1,1255 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Voxel Hockey Championship</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            background: linear-gradient(45deg, #000428, #004e92);
+            font-family: 'Arial', sans-serif;
+        }
+        
+        #gameContainer {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+        }
+        
+        #scoreboard {
+            position: absolute;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 15px 30px;
+            border-radius: 15px;
+            font-size: 24px;
+            font-weight: bold;
+            border: 3px solid #00ffff;
+            box-shadow: 0 0 20px #00ffff;
+            z-index: 100;
+        }
+        
+        .team-red { color: #ff0040; }
+        .team-blue { color: #0080ff; }
+        
+        #controls {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            color: white;
+            font-size: 14px;
+            z-index: 100;
+        }
+        
+        canvas {
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <div id="gameContainer">
+        <div id="scoreboard">
+            <span class="team-red">RED TEAM: <span id="redScore">0</span></span>
+            <span style="margin: 0 20px;">VS</span>
+            <span class="team-blue">BLUE TEAM: <span id="blueScore">0</span></span>
+        </div>
+        <div id="controls">
+            Mouse: Look Around | WASD: Move Camera | Space: Reset Game
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script>
+        // Game variables
+        let scene, camera, renderer, clock;
+        let players = [], puck, goalies = [];
+        let redScore = 0, blueScore = 0;
+        let gameState = 'playing';
+        let particleSystem;
+        
+        // Rink dimensions
+        const RINK_WIDTH = 100;
+        const RINK_HEIGHT = 60;
+        const GOAL_WIDTH = 12;
+        const GOAL_HEIGHT = 6;
+        
+        // Initialize the game
+        function init() {
+            // Scene setup
+            scene = new THREE.Scene();
+            scene.fog = new THREE.Fog(0x001122, 50, 200);
+            
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.set(0, 80, 80);
+            camera.lookAt(0, 0, 0);
+            
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+            renderer.setClearColor(0x001122);
+            document.getElementById('gameContainer').appendChild(renderer.domElement);
+            
+            clock = new THREE.Clock();
+            
+            createRink();
+            createPlayers();
+            createPuck();
+            createLighting();
+            createParticleSystem();
+            
+            animate();
+        }
+        
+        function createRink() {
+            // Ice rink
+            const rinkGeometry = new THREE.PlaneGeometry(RINK_WIDTH, RINK_HEIGHT);
+            const rinkMaterial = new THREE.MeshLambertMaterial({ 
+                color: 0xf0f8ff,
+                transparent: true,
+                opacity: 0.9
+            });
+            const rink = new THREE.Mesh(rinkGeometry, rinkMaterial);
+            rink.rotation.x = -Math.PI / 2;
+            rink.receiveShadow = true;
+            scene.add(rink);
+            
+            // Rink borders
+            const borderMaterial = new THREE.MeshLambertMaterial({ color: 0x8B4513 });
+            
+            // Side borders
+            const sideGeometry = new THREE.BoxGeometry(RINK_WIDTH + 4, 3, 2);
+            const topBorder = new THREE.Mesh(sideGeometry, borderMaterial);
+            topBorder.position.set(0, 1.5, -RINK_HEIGHT/2 - 1);
+            scene.add(topBorder);
+            
+            const bottomBorder = new THREE.Mesh(sideGeometry, borderMaterial);
+            bottomBorder.position.set(0, 1.5, RINK_HEIGHT/2 + 1);
+            scene.add(bottomBorder);
+            
+            // End borders with goal openings
+            const endGeometry = new THREE.BoxGeometry(2, 3, RINK_HEIGHT - GOAL_WIDTH);
+            const leftBorder1 = new THREE.Mesh(endGeometry, borderMaterial);
+            leftBorder1.position.set(-RINK_WIDTH/2 - 1, 1.5, -(RINK_HEIGHT - GOAL_WIDTH)/4);
+            scene.add(leftBorder1);
+            
+            const leftBorder2 = new THREE.Mesh(endGeometry, borderMaterial);
+            leftBorder2.position.set(-RINK_WIDTH/2 - 1, 1.5, (RINK_HEIGHT - GOAL_WIDTH)/4);
+            scene.add(leftBorder2);
+            
+            const rightBorder1 = new THREE.Mesh(endGeometry, borderMaterial);
+            rightBorder1.position.set(RINK_WIDTH/2 + 1, 1.5, -(RINK_HEIGHT - GOAL_WIDTH)/4);
+            scene.add(rightBorder1);
+            
+            const rightBorder2 = new THREE.Mesh(endGeometry, borderMaterial);
+            rightBorder2.position.set(RINK_WIDTH/2 + 1, 1.5, (RINK_HEIGHT - GOAL_WIDTH)/4);
+            scene.add(rightBorder2);
+            
+            // Goals
+            createGoal(-RINK_WIDTH/2, 'red');
+            createGoal(RINK_WIDTH/2, 'blue');
+            
+            // Center line
+            const lineGeometry = new THREE.BoxGeometry(0.2, 0.1, RINK_HEIGHT);
+            const lineMaterial = new THREE.MeshLambertMaterial({ color: 0xff0000 });
+            const centerLine = new THREE.Mesh(lineGeometry, lineMaterial);
+            centerLine.position.y = 0.1;
+            scene.add(centerLine);
+        }
+        
+        function createGoal(x, team) {
+            const goalColor = team === 'red' ? 0xff0040 : 0x0080ff;
+            const goalMaterial = new THREE.MeshLambertMaterial({ color: goalColor });
+            
+            // Goal posts
+            const postGeometry = new THREE.BoxGeometry(0.5, GOAL_HEIGHT, 0.5);
+            const post1 = new THREE.Mesh(postGeometry, goalMaterial);
+            post1.position.set(x, GOAL_HEIGHT/2, -GOAL_WIDTH/2);
+            scene.add(post1);
+            
+            const post2 = new THREE.Mesh(postGeometry, goalMaterial);
+            post2.position.set(x, GOAL_HEIGHT/2, GOAL_WIDTH/2);
+            scene.add(post2);
+            
+            // Goal crossbar
+            const crossbarGeometry = new THREE.BoxGeometry(0.5, 0.5, GOAL_WIDTH);
+            const crossbar = new THREE.Mesh(crossbarGeometry, goalMaterial);
+            crossbar.position.set(x, GOAL_HEIGHT, 0);
+            scene.add(crossbar);
+            
+            // Goal net (visual effect)
+            const netGeometry = new THREE.PlaneGeometry(1, GOAL_HEIGHT);
+            const netMaterial = new THREE.MeshLambertMaterial({ 
+                color: 0xffffff, 
+                transparent: true, 
+                opacity: 0.3,
+                wireframe: true
+            });
+            const net = new THREE.Mesh(netGeometry, netMaterial);
+            net.position.set(x - (team === 'red' ? 0.5 : -0.5), GOAL_HEIGHT/2, 0);
+            scene.add(net);
+        }
+        
+        function createVoxelPlayer(teamColor, position, team, role) {
+            // Create player group
+            const playerGroup = new THREE.Group();
+            
+            // Body (torso)
+            const bodyGeometry = new THREE.BoxGeometry(1.2, 2, 0.8);
+            const bodyMaterial = new THREE.MeshLambertMaterial({ color: teamColor });
+            const body = new THREE.Mesh(bodyGeometry, bodyMaterial);
+            body.position.y = 1;
+            body.castShadow = true;
+            playerGroup.add(body);
+            
+            // Head
+            const headGeometry = new THREE.BoxGeometry(0.8, 0.8, 0.8);
+            const headMaterial = new THREE.MeshLambertMaterial({ color: 0xffdbac });
+            const head = new THREE.Mesh(headGeometry, headMaterial);
+            head.position.y = 2.4;
+            head.castShadow = true;
+            playerGroup.add(head);
+            
+            // Helmet
+            const helmetGeometry = new THREE.BoxGeometry(0.9, 0.6, 0.9);
+            const helmetMaterial = new THREE.MeshLambertMaterial({ color: teamColor });
+            const helmet = new THREE.Mesh(helmetGeometry, helmetMaterial);
+            helmet.position.y = 2.6;
+            helmet.castShadow = true;
+            playerGroup.add(helmet);
+            
+            // Arms
+            const armGeometry = new THREE.BoxGeometry(0.4, 1.5, 0.4);
+            const armMaterial = new THREE.MeshLambertMaterial({ color: teamColor });
+            
+            const leftArm = new THREE.Mesh(armGeometry, armMaterial);
+            leftArm.position.set(-0.8, 1, 0);
+            leftArm.castShadow = true;
+            playerGroup.add(leftArm);
+            
+            const rightArm = new THREE.Mesh(armGeometry, armMaterial);
+            rightArm.position.set(0.8, 1, 0);
+            rightArm.castShadow = true;
+            playerGroup.add(rightArm);
+            
+            // Legs
+            const legGeometry = new THREE.BoxGeometry(0.4, 1.2, 0.4);
+            const legMaterial = new THREE.MeshLambertMaterial({ color: teamColor });
+            
+            const leftLeg = new THREE.Mesh(legGeometry, legMaterial);
+            leftLeg.position.set(-0.3, -0.6, 0);
+            leftLeg.castShadow = true;
+            playerGroup.add(leftLeg);
+            
+            const rightLeg = new THREE.Mesh(legGeometry, legMaterial);
+            rightLeg.position.set(0.3, -0.6, 0);
+            rightLeg.castShadow = true;
+            playerGroup.add(rightLeg);
+            
+            // Hockey stick
+            const stickGeometry = new THREE.BoxGeometry(0.1, 4, 0.1);
+            const stickMaterial = new THREE.MeshLambertMaterial({ color: 0x8B4513 });
+            const stick = new THREE.Mesh(stickGeometry, stickMaterial);
+            stick.position.set(1.2, 0.5, 0);
+            stick.rotation.z = -0.3;
+            stick.castShadow = true;
+            playerGroup.add(stick);
+            
+            // Stick blade
+            const bladeGeometry = new THREE.BoxGeometry(0.1, 0.5, 0.8);
+            const bladeMaterial = new THREE.MeshLambertMaterial({ color: 0x333333 });
+            const blade = new THREE.Mesh(bladeGeometry, bladeMaterial);
+            blade.position.set(1.6, -1.2, 0);
+            blade.castShadow = true;
+            playerGroup.add(blade);
+            
+            // Set position and properties
+            playerGroup.position.copy(position);
+            playerGroup.team = team;
+            playerGroup.role = role;
+            playerGroup.startPosition = position.clone();
+            
+            // Balanced speed values - give red team slight speed advantage
+            const speedBonus = team === 'red' ? 0.05 : 0;
+            playerGroup.speed = (role === 'winger' ? 0.4 + Math.random() * 0.2 : 
+                               role === 'center' ? 0.35 + Math.random() * 0.15 :
+                               0.25 + Math.random() * 0.15) + speedBonus;
+            playerGroup.target = new THREE.Vector3();
+            
+            // Add momentum properties
+            playerGroup.velocity = new THREE.Vector3(0, 0, 0);
+            playerGroup.acceleration = 0.05; // How quickly they can change velocity
+            playerGroup.friction = 0.85; // How much velocity is retained each frame
+            playerGroup.maxSpeed = playerGroup.speed;
+            
+            // Add pass cooldown property
+            playerGroup.lastPassTime = 0;
+            
+            return playerGroup;
+        }
+
+        function createPlayers() {
+            // Red team positions (left side)
+            const redPositions = [
+                { x: -10, z: 0, role: 'center' },      // Center
+                { x: -15, z: -12, role: 'winger' },    // Left wing
+                { x: -15, z: 12, role: 'winger' },     // Right wing
+                { x: -25, z: -8, role: 'defense' },    // Left defense
+                { x: -25, z: 8, role: 'defense' }      // Right defense
+            ];
+            
+            // Blue team positions (right side)
+            const bluePositions = [
+                { x: 10, z: 0, role: 'center' },       // Center
+                { x: 15, z: 12, role: 'winger' },      // Left wing
+                { x: 15, z: -12, role: 'winger' },     // Right wing
+                { x: 25, z: 8, role: 'defense' },      // Left defense
+                { x: 25, z: -8, role: 'defense' }      // Right defense
+            ];
+            
+            // Create red team players
+            redPositions.forEach((pos, i) => {
+                const position = new THREE.Vector3(pos.x, 2, pos.z);
+                const player = createVoxelPlayer(0xff0040, position, 'red', pos.role);
+                scene.add(player);
+                players.push(player);
+            });
+            
+            // Create blue team players
+            bluePositions.forEach((pos, i) => {
+                const position = new THREE.Vector3(pos.x, 2, pos.z);
+                const player = createVoxelPlayer(0x0080ff, position, 'blue', pos.role);
+                scene.add(player);
+                players.push(player);
+            });
+            
+            // Goalies
+            const redGoaliePosition = new THREE.Vector3(-RINK_WIDTH/2 + 5, 2, 0);
+            const redGoalie = createVoxelPlayer(0x800020, redGoaliePosition, 'red', 'goalie');
+            redGoalie.scale.set(1.2, 1.2, 1.2); // Make goalies bigger
+            scene.add(redGoalie);
+            goalies.push(redGoalie);
+            
+            const blueGoaliePosition = new THREE.Vector3(RINK_WIDTH/2 - 5, 2, 0);
+            const blueGoalie = createVoxelPlayer(0x004080, blueGoaliePosition, 'blue', 'goalie');
+            blueGoalie.scale.set(1.2, 1.2, 1.2); // Make goalies bigger
+            scene.add(blueGoalie);
+            goalies.push(blueGoalie);
+        }
+        
+        function createPuck() {
+            const puckGeometry = new THREE.CylinderGeometry(1, 1, 0.5, 8);
+            const puckMaterial = new THREE.MeshLambertMaterial({ color: 0x000000 });
+            puck = new THREE.Mesh(puckGeometry, puckMaterial);
+            puck.position.set(0, 0.25, 0);
+            puck.castShadow = true;
+            puck.velocity = new THREE.Vector3(0, 0, 0);
+            scene.add(puck);
+        }
+        
+        function createLighting() {
+            // Ambient light
+            const ambientLight = new THREE.AmbientLight(0x404040, 0.6);
+            scene.add(ambientLight);
+            
+            // Main spotlight over center ice
+            const mainSpotlight = new THREE.SpotLight(0xffffff, 1.5, 200, Math.PI / 3, 0.1);
+            mainSpotlight.position.set(0, 120, 0);
+            mainSpotlight.target.position.set(0, 0, 0);
+            mainSpotlight.castShadow = true;
+            mainSpotlight.shadow.mapSize.width = 2048;
+            mainSpotlight.shadow.mapSize.height = 2048;
+            scene.add(mainSpotlight);
+            scene.add(mainSpotlight.target);
+            
+            // Additional arena spotlights for even coverage
+            const spotlightPositions = [
+                { x: -25, y: 100, z: -15 },
+                { x: 25, y: 100, z: -15 },
+                { x: -25, y: 100, z: 15 },
+                { x: 25, y: 100, z: 15 },
+                { x: -40, y: 80, z: 0 },
+                { x: 40, y: 80, z: 0 }
+            ];
+            
+            spotlightPositions.forEach(pos => {
+                const spotlight = new THREE.SpotLight(0xffffff, 0.8, 150, Math.PI / 4, 0.2);
+                spotlight.position.set(pos.x, pos.y, pos.z);
+                spotlight.target.position.set(0, 0, 0);
+                spotlight.castShadow = true;
+                spotlight.shadow.mapSize.width = 1024;
+                spotlight.shadow.mapSize.height = 1024;
+                scene.add(spotlight);
+                scene.add(spotlight.target);
+            });
+            
+            // Goal area lights for drama
+            const redGoalLight = new THREE.SpotLight(0xff4080, 1.2, 100, Math.PI / 6, 0.3);
+            redGoalLight.position.set(-RINK_WIDTH/2, 60, 0);
+            redGoalLight.target.position.set(-RINK_WIDTH/2, 0, 0);
+            scene.add(redGoalLight);
+            scene.add(redGoalLight.target);
+            
+            const blueGoalLight = new THREE.SpotLight(0x4080ff, 1.2, 100, Math.PI / 6, 0.3);
+            blueGoalLight.position.set(RINK_WIDTH/2, 60, 0);
+            blueGoalLight.target.position.set(RINK_WIDTH/2, 0, 0);
+            scene.add(blueGoalLight);
+            scene.add(blueGoalLight.target);
+            
+            // Perimeter arena lighting
+            const perimeterLights = [
+                { x: -RINK_WIDTH/2 - 10, y: 40, z: -RINK_HEIGHT/2, color: 0xffffff },
+                { x: RINK_WIDTH/2 + 10, y: 40, z: -RINK_HEIGHT/2, color: 0xffffff },
+                { x: -RINK_WIDTH/2 - 10, y: 40, z: RINK_HEIGHT/2, color: 0xffffff },
+                { x: RINK_WIDTH/2 + 10, y: 40, z: RINK_HEIGHT/2, color: 0xffffff },
+                { x: 0, y: 40, z: -RINK_HEIGHT/2 - 10, color: 0xffffff },
+                { x: 0, y: 40, z: RINK_HEIGHT/2 + 10, color: 0xffffff }
+            ];
+            
+            perimeterLights.forEach(lightPos => {
+                const perimeterLight = new THREE.PointLight(lightPos.color, 0.6, 80);
+                perimeterLight.position.set(lightPos.x, lightPos.y, lightPos.z);
+                scene.add(perimeterLight);
+            });
+            
+            // Colored team lights for atmosphere
+            const redTeamLight = new THREE.PointLight(0xff0040, 0.8, 60);
+            redTeamLight.position.set(-RINK_WIDTH/2 - 20, 30, 0);
+            scene.add(redTeamLight);
+            
+            const blueTeamLight = new THREE.PointLight(0x0080ff, 0.8, 60);
+            blueTeamLight.position.set(RINK_WIDTH/2 + 20, 30, 0);
+            scene.add(blueTeamLight);
+            
+            // Additional overhead lighting grid
+            for (let x = -30; x <= 30; x += 20) {
+                for (let z = -20; z <= 20; z += 20) {
+                    if (x === 0 && z === 0) continue; // Skip center (main spotlight)
+                    
+                    const gridLight = new THREE.PointLight(0xffffff, 0.4, 50);
+                    gridLight.position.set(x, 80, z);
+                    scene.add(gridLight);
+                }
+            }
+            
+            // Dramatic side lighting
+            const sideLight1 = new THREE.DirectionalLight(0xffffff, 0.3);
+            sideLight1.position.set(-100, 50, 0);
+            sideLight1.target.position.set(0, 0, 0);
+            scene.add(sideLight1);
+            scene.add(sideLight1.target);
+            
+            const sideLight2 = new THREE.DirectionalLight(0xffffff, 0.3);
+            sideLight2.position.set(100, 50, 0);
+            sideLight2.target.position.set(0, 0, 0);
+            scene.add(sideLight2);
+            scene.add(sideLight2.target);
+        }
+        
+        function createParticleSystem() {
+            const particleCount = 1000;
+            const particles = new THREE.BufferGeometry();
+            const positions = new Float32Array(particleCount * 3);
+            const colors = new Float32Array(particleCount * 3);
+            
+            for (let i = 0; i < particleCount; i++) {
+                positions[i * 3] = (Math.random() - 0.5) * 200;
+                positions[i * 3 + 1] = Math.random() * 100;
+                positions[i * 3 + 2] = (Math.random() - 0.5) * 200;
+                
+                colors[i * 3] = Math.random();
+                colors[i * 3 + 1] = Math.random();
+                colors[i * 3 + 2] = 1;
+            }
+            
+            particles.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+            particles.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+            
+            const particleMaterial = new THREE.PointsMaterial({
+                size: 0.5,
+                vertexColors: true,
+                transparent: true,
+                opacity: 0.6
+            });
+            
+            particleSystem = new THREE.Points(particles, particleMaterial);
+            scene.add(particleSystem);
+        }
+        
+        function updateAI() {
+            const delta = clock.getDelta();
+            
+            // Update players with position-based behavior
+            players.forEach(player => {
+                const distanceToPuck = player.position.distanceTo(puck.position);
+                const isOffensive = (player.team === 'red' && puck.position.x > -10) ||
+                                   (player.team === 'blue' && puck.position.x < 10);
+                
+                let targetPosition = new THREE.Vector3();
+                
+                // Check if forwards are ahead of the puck (offside prevention)
+                const goalX = player.team === 'red' ? RINK_WIDTH/2 : -RINK_WIDTH/2;
+                const isAheadOfPuck = (player.team === 'red' && player.position.x > puck.position.x) ||
+                                     (player.team === 'blue' && player.position.x < puck.position.x);
+                
+                // Autonomous positioning based on role and game situation
+                if (player.role === 'defense') {
+                    const defenseZone = player.team === 'red' ? -25 : 25;
+                    if (distanceToPuck < 20 && 
+                        ((player.team === 'red' && puck.position.x < -5) ||
+                         (player.team === 'blue' && puck.position.x > 5))) {
+                        // Chase puck if it's in defensive zone
+                        targetPosition.copy(puck.position);
+                    } else if (isOffensive) {
+                        // Support attack from point position
+                        const supportX = player.team === 'red' ? 15 : -15;
+                        targetPosition.set(supportX, 2, player.startPosition.z);
+                    } else {
+                        // Stay in defensive position
+                        targetPosition.set(defenseZone, 2, puck.position.z * 0.4);
+                    }
+                } else if (player.role === 'center' || player.role === 'winger') {
+                    // Forwards must not get ahead of the puck
+                    if (isAheadOfPuck && isOffensive) {
+                        // Return to puck level or slightly behind
+                        const returnX = player.team === 'red' ? 
+                                       Math.min(puck.position.x - 3, player.position.x) :
+                                       Math.max(puck.position.x + 3, player.position.x);
+                        targetPosition.set(returnX, 2, player.position.z);
+                    } else if (player.role === 'center') {
+                        if (isOffensive) {
+                            // Move to net front or slot area, but stay behind puck
+                            const maxX = player.team === 'red' ? 
+                                        Math.min(35, puck.position.x + 10) :
+                                        Math.max(-35, puck.position.x - 10);
+                            targetPosition.set(maxX, 2, (Math.random() - 0.5) * 8);
+                        } else {
+                            // Follow puck for faceoffs and defensive coverage
+                            targetPosition.copy(puck.position);
+                        }
+                    } else if (player.role === 'winger') {
+                        if (isOffensive) {
+                            // Position on the sides for one-timers and rebounds, but stay behind puck
+                            const maxX = player.team === 'red' ? 
+                                        Math.min(38, puck.position.x + 8) :
+                                        Math.max(-38, puck.position.x - 8);
+                            const wingZ = player.startPosition.z > 0 ? 
+                                        Math.min(GOAL_WIDTH/2 + 5, player.startPosition.z) : 
+                                        Math.max(-GOAL_WIDTH/2 - 5, player.startPosition.z);
+                            targetPosition.set(maxX, 2, wingZ);
+                        } else {
+                            // Back-check and support defense
+                            targetPosition.copy(puck.position);
+                        }
+                    }
+                }
+                
+                // Move toward target with momentum-based physics
+                let desiredDirection = new THREE.Vector3()
+                    .subVectors(targetPosition, player.position)
+                    .normalize();
+                
+                // Check if path is blocked by opponent and try to go around
+                const opponents = players.filter(p => p.team !== player.team);
+                const pathBlocked = opponents.some(opp => {
+                    const distanceToPath = opp.position.distanceTo(player.position);
+                    const directionToOpponent = new THREE.Vector3()
+                        .subVectors(opp.position, player.position)
+                        .normalize();
+                    
+                    // Check if opponent is in front and close
+                    const dotProduct = desiredDirection.dot(directionToOpponent);
+                    return distanceToPath < 8 && dotProduct > 0.7; // Opponent blocking forward path
+                });
+                
+                if (pathBlocked) {
+                    // Try to go around - find best lateral direction
+                    const lateralOptions = [
+                        new THREE.Vector3(desiredDirection.x, 0, desiredDirection.z + 1).normalize(), // Move up
+                        new THREE.Vector3(desiredDirection.x, 0, desiredDirection.z - 1).normalize()  // Move down
+                    ];
+                    
+                    // Pick the lateral direction with fewer opponents
+                    let bestDirection = desiredDirection;
+                    let bestScore = -1;
+                    
+                    lateralOptions.forEach(lateralDir => {
+                        let score = 10; // Base score
+                        
+                        // Check how many opponents are in this direction
+                        opponents.forEach(opp => {
+                            const futurePos = new THREE.Vector3()
+                                .copy(player.position)
+                                .add(lateralDir.clone().multiplyScalar(10));
+                            
+                            if (opp.position.distanceTo(futurePos) < 8) {
+                                score -= 3; // Penalty for opponents in this direction
+                            }
+                        });
+                        
+                        // Avoid going into boards/corners
+                        const futureZ = player.position.z + lateralDir.z * 10;
+                        if (Math.abs(futureZ) > RINK_HEIGHT/2 - 5) {
+                            score -= 5; // Penalty for going toward boards
+                        }
+                        
+                        if (score > bestScore) {
+                            bestScore = score;
+                            bestDirection = lateralDir;
+                        }
+                    });
+                    
+                    desiredDirection = bestDirection;
+                }
+                
+                // Add some autonomous movement variation
+                desiredDirection.x += (Math.random() - 0.5) * 0.1;
+                desiredDirection.z += (Math.random() - 0.5) * 0.1;
+                desiredDirection.normalize();
+                
+                // Calculate desired velocity
+                const desiredVelocity = desiredDirection.multiplyScalar(player.maxSpeed);
+                
+                // Apply acceleration toward desired velocity
+                const velocityDiff = new THREE.Vector3()
+                    .subVectors(desiredVelocity, player.velocity);
+                
+                // Limit acceleration
+                if (velocityDiff.length() > player.acceleration) {
+                    velocityDiff.normalize().multiplyScalar(player.acceleration);
+                }
+                
+                // Update velocity
+                player.velocity.add(velocityDiff);
+                
+                // Apply friction
+                player.velocity.multiplyScalar(player.friction);
+                
+                // Limit max velocity
+                if (player.velocity.length() > player.maxSpeed) {
+                    player.velocity.normalize().multiplyScalar(player.maxSpeed);
+                }
+                
+                // Apply velocity to position
+                player.position.add(player.velocity);
+                
+                // Check for collisions with other players
+                checkPlayerCollisions(player);
+                
+                // Puck handling with passing priority
+                if (distanceToPuck < 3) {
+                    handlePuckAction(player);
+                }
+                
+                // Keep players on rink
+                player.position.x = Math.max(-RINK_WIDTH/2 + 2, Math.min(RINK_WIDTH/2 - 2, player.position.x));
+                player.position.z = Math.max(-RINK_HEIGHT/2 + 2, Math.min(RINK_HEIGHT/2 - 2, player.position.z));
+            });
+            
+            // Update goalies
+            goalies.forEach(goalie => {
+                const puckDirection = puck.velocity.clone().normalize();
+                const puckSpeed = puck.velocity.length();
+                const distanceToPuck = goalie.position.distanceTo(puck.position);
+                const isPuckComingTowards = (goalie.team === 'red' && puckDirection.x < -0.3 && puck.position.x < 10) ||
+                                         (goalie.team === 'blue' && puckDirection.x > 0.3 && puck.position.x > -10);
+                
+                // Expanded save area - goalies can stop puck from wider range
+                const saveRadius = 8; // Increased from implicit 3 unit range
+                
+                if (isPuckComingTowards && puckSpeed > 0.2) {
+                    // Move to intercept with balanced difficulty
+                    const targetZ = Math.max(-GOAL_WIDTH/2 + 1.5, Math.min(GOAL_WIDTH/2 - 1.5, puck.position.z));
+                    const direction = targetZ - goalie.position.z;
+                    goalie.position.z += direction * 0.08;
+                } else {
+                    // Return to center when not under threat
+                    goalie.position.z += (0 - goalie.position.z) * 0.02;
+                }
+                
+                // Check if goalie can stop the puck
+                if (distanceToPuck < saveRadius && puckSpeed > 0.1) {
+                    // Goalie makes a save!
+                    puck.velocity.multiplyScalar(0.1); // Nearly stop the puck
+                    
+                    // Find nearest open teammate for pass
+                    setTimeout(() => {
+                        goaliePass(goalie);
+                    }, 500); // Brief delay to simulate save and setup
+                }
+            });
+        }
+        
+        function checkPlayerCollisions(player) {
+            const allPlayers = [...players, ...goalies];
+            
+            allPlayers.forEach(otherPlayer => {
+                if (otherPlayer === player) return;
+                
+                const distance = player.position.distanceTo(otherPlayer.position);
+                const collisionDistance = 3; // Distance for collision detection
+                
+                if (distance < collisionDistance) {
+                    // Collision detected! Determine outcome
+                    const random = Math.random();
+                    let knockedPlayer = null;
+                    
+                    if (random < 0.45) {
+                        // 45% chance: No one gets knocked down
+                        knockedPlayer = null;
+                    } else if (random < 0.725) {
+                        // 27.5% chance: First player gets knocked down
+                        knockedPlayer = player;
+                    } else {
+                        // 27.5% chance: Second player gets knocked down
+                        knockedPlayer = otherPlayer;
+                    }
+                    
+                    if (knockedPlayer) {
+                        handlePlayerKnockdown(knockedPlayer);
+                    }
+                    
+                    // Separate players to prevent continuous collision
+                    const separationForce = new THREE.Vector3()
+                        .subVectors(player.position, otherPlayer.position)
+                        .normalize()
+                        .multiplyScalar(0.5);
+                    
+                    player.position.add(separationForce);
+                    otherPlayer.position.sub(separationForce);
+                }
+            });
+        }
+        
+        function handlePlayerKnockdown(player) {
+            // Check if player has the puck (is very close to it)
+            const hasPuck = player.position.distanceTo(puck.position) < 4;
+            
+            if (hasPuck) {
+                // Send puck in random direction
+                const randomAngle = Math.random() * Math.PI * 2;
+                const randomSpeed = 1.5 + Math.random() * 1.5;
+                
+                puck.velocity.set(
+                    Math.cos(randomAngle) * randomSpeed,
+                    0,
+                    Math.sin(randomAngle) * randomSpeed
+                );
+            }
+            
+            // Knock down effects - reduce player velocity and add brief pause
+            player.velocity.multiplyScalar(0.1); // Nearly stop the player
+            
+            // Add a brief "stunned" period where player moves slower
+            if (!player.knockdownTimer) {
+                player.knockdownTimer = 60; // 60 frames of reduced effectiveness
+                player.originalSpeed = player.maxSpeed;
+                player.maxSpeed *= 0.3; // Reduce speed significantly
+            }
+        }
+        
+        function updateKnockdownTimers() {
+            const allPlayers = [...players, ...goalies];
+            
+            allPlayers.forEach(player => {
+                if (player.knockdownTimer && player.knockdownTimer > 0) {
+                    player.knockdownTimer--;
+                    
+                    if (player.knockdownTimer === 0) {
+                        // Recovery - restore original speed
+                        player.maxSpeed = player.originalSpeed || player.speed;
+                        delete player.knockdownTimer;
+                        delete player.originalSpeed;
+                    }
+                }
+            });
+        }
+        
+        function goaliePass(goalie) {
+            // Find teammates for potential pass
+            const teammates = players.filter(p => 
+                p.team === goalie.team && 
+                p.position.distanceTo(goalie.position) < 40
+            );
+            
+            // Sort by distance and openness
+            teammates.sort((a, b) => {
+                const aScore = getGoaliePassScore(goalie, a);
+                const bScore = getGoaliePassScore(goalie, b);
+                return bScore - aScore;
+            });
+            
+            const bestTeammate = teammates[0];
+            if (bestTeammate) {
+                // Execute goalie pass
+                const passDirection = new THREE.Vector3()
+                    .subVectors(bestTeammate.position, puck.position)
+                    .normalize()
+                    .multiplyScalar(1.5 + Math.random() * 0.8);
+                
+                // Lead the teammate slightly
+                const leadDirection = goalie.team === 'red' ? 1 : -1;
+                passDirection.x += leadDirection * 0.3;
+                
+                puck.velocity.copy(passDirection);
+            }
+        }
+        
+        function getGoaliePassScore(goalie, teammate) {
+            let score = 0;
+            const distance = goalie.position.distanceTo(teammate.position);
+            
+            // Distance scoring (prefer nearby teammates)
+            if (distance < 15) score += 8;
+            else if (distance < 25) score += 6;
+            else if (distance < 35) score += 3;
+            else score += 1;
+            
+            // Prefer defense for breakout passes
+            if (teammate.role === 'defense') score += 4;
+            if (teammate.role === 'center') score += 2;
+            
+            // Check if teammate is in a good position
+            const defensiveZone = goalie.team === 'red' ? -30 : 30;
+            const isInGoodPosition = (goalie.team === 'red' && teammate.position.x < defensiveZone + 15) ||
+                                   (goalie.team === 'blue' && teammate.position.x > defensiveZone - 15);
+            
+            if (isInGoodPosition) score += 3;
+            
+            // Check if pass lane is clear (simplified check)
+            const opponents = players.filter(p => p.team !== goalie.team);
+            const passBlocked = opponents.some(opp => {
+                // Simple check if opponent is roughly between goalie and teammate
+                const midX = (goalie.position.x + teammate.position.x) / 2;
+                const midZ = (goalie.position.z + teammate.position.z) / 2;
+                return opp.position.distanceTo(new THREE.Vector3(midX, 2, midZ)) < 6;
+            });
+            
+            if (passBlocked) score -= 4;
+            
+            // Avoid passing to teammate who is covered
+            const isCovered = opponents.some(opp => 
+                opp.position.distanceTo(teammate.position) < 6
+            );
+            
+            if (isCovered) score -= 3;
+            
+            return Math.max(0, score);
+        }
+        
+        function handlePuckAction(player) {
+            // Check pass cooldown - prevent immediate passing
+            const currentTime = Date.now();
+            const passCooldown = 800; // 800ms cooldown between passes
+            const timeSinceLastPass = currentTime - player.lastPassTime;
+            
+            // Find teammates for passing
+            const teammates = players.filter(p => 
+                p.team === player.team && 
+                p !== player && 
+                p.position.distanceTo(player.position) < 30
+            );
+            
+            // Sort teammates by strategic value
+            teammates.sort((a, b) => {
+                const aScore = getPassScore(player, a);
+                const bScore = getPassScore(player, b);
+                return bScore - aScore;
+            });
+            
+            const bestTeammate = teammates[0];
+            const isOffensive = (player.team === 'red' && puck.position.x > 0) ||
+                               (player.team === 'blue' && puck.position.x < 0);
+            
+            // Decision making: Skate vs Pass vs Shoot vs Clear
+            const passScore = (bestTeammate && timeSinceLastPass > passCooldown) ? getPassScore(player, bestTeammate) : 0;
+            const shootScore = getShootScore(player);
+            const skateScore = getSkateScore(player);
+            
+            let action = 'skate'; // Default to skating with puck
+            
+            // Only shoot if clear line to goal and good scoring chance
+            if (shootScore > 8 && hasClearShotToGoal(player)) {
+                action = 'shoot';
+            } else if (passScore > 6 && timeSinceLastPass > passCooldown) { // Good passing opportunity and cooldown expired
+                action = 'pass';
+            } else if (skateScore > 4) { // Can advance with puck
+                action = 'skate';
+            } else if (passScore > 3 && timeSinceLastPass > passCooldown) { // Decent pass available and cooldown expired
+                action = 'pass';
+            } else { // No good options, clear it
+                action = 'clear';
+            }
+            
+            // Execute action
+            if (action === 'pass' && bestTeammate && timeSinceLastPass > passCooldown) {
+                executePass(player, bestTeammate);
+                player.lastPassTime = currentTime; // Set cooldown timer
+            } else if (action === 'shoot') {
+                executeShot(player);
+            } else if (action === 'skate') {
+                executeSkate(player);
+            } else {
+                executeClear(player);
+            }
+        }
+        
+        function getPassScore(passer, receiver) {
+            let score = 0;
+            const distance = passer.position.distanceTo(receiver.position);
+            const isOffensive = (passer.team === 'red' && puck.position.x > 0) ||
+                               (passer.team === 'blue' && puck.position.x < 0);
+            
+            // Distance scoring (closer is better for short passes, medium distance for stretch passes)
+            if (distance < 10) score += 8;
+            else if (distance < 20) score += 6;
+            else if (distance < 30) score += 3;
+            else score += 1;
+            
+            // Position scoring
+            if (isOffensive) {
+                // Reward forwards in scoring position
+                const goalX = passer.team === 'red' ? RINK_WIDTH/2 : -RINK_WIDTH/2;
+                const receiverToGoal = Math.abs(receiver.position.x - goalX);
+                if (receiverToGoal < 15) score += 5;
+                else if (receiverToGoal < 25) score += 3;
+                
+                // Reward centers and wingers in offensive zone
+                if (receiver.role === 'center' || receiver.role === 'winger') {
+                    score += 4;
+                }
+            }
+            
+            // Role-based scoring
+            if (receiver.role === 'center') score += 2;
+            if (receiver.role === 'winger' && isOffensive) score += 3;
+            if (receiver.role === 'defense' && !isOffensive) score += 2;
+            
+            // Check for clear passing lane (simplified)
+            const opponents = players.filter(p => p.team !== passer.team);
+            const passBlocked = opponents.some(opp => {
+                const midX = (passer.position.x + receiver.position.x) / 2;
+                const midZ = (passer.position.z + receiver.position.z) / 2;
+                return opp.position.distanceTo(new THREE.Vector3(midX, 2, midZ)) < 4;
+            });
+            
+            if (passBlocked) score -= 3;
+            
+            return Math.max(0, score);
+        }
+        
+        function getShootScore(player) {
+            const goalX = player.team === 'red' ? RINK_WIDTH/2 : -RINK_WIDTH/2;
+            const distanceToGoal = Math.abs(player.position.x - goalX);
+            const angleToGoal = Math.abs(player.position.z);
+            
+            let score = 0;
+            
+            // Only consider shooting if relatively close and good angle
+            if (distanceToGoal > 20) return 0; // Too far to shoot
+            if (angleToGoal > 15) return 2; // Poor angle, very low score
+            
+            // Distance scoring (closer is better for shooting)
+            if (distanceToGoal < 10) score += 8;
+            else if (distanceToGoal < 15) score += 6;
+            else if (distanceToGoal < 20) score += 3;
+            
+            // Angle scoring (center is much better)
+            if (angleToGoal < 3) score += 6;
+            else if (angleToGoal < 8) score += 4;
+            else if (angleToGoal < 15) score += 1;
+            
+            // Role bonus
+            if (player.role === 'center' || player.role === 'winger') {
+                score += 2;
+            }
+            
+            return score;
+        }
+        
+        function getSkateScore(player) {
+            const goalX = player.team === 'red' ? RINK_WIDTH/2 : -RINK_WIDTH/2;
+            const distanceToGoal = Math.abs(player.position.x - goalX);
+            const isOffensive = (player.team === 'red' && puck.position.x > 0) ||
+                               (player.team === 'blue' && puck.position.x < 0);
+            
+            let score = 0;
+            
+            // Always good to skate toward goal if space available
+            if (isOffensive && distanceToGoal > 10) {
+                score += 7; // High score for advancing toward goal
+            } else if (distanceToGoal > 25) {
+                score += 5; // Good to advance up ice
+            }
+            
+            // Check if path toward goal is relatively clear
+            const opponents = players.filter(p => p.team !== player.team);
+            const pathClear = !opponents.some(opp => {
+                const toGoal = new THREE.Vector3(goalX - player.position.x, 0, -player.position.z * 0.3);
+                const playerToGoal = new THREE.Vector3().copy(player.position).add(toGoal.normalize().multiplyScalar(10));
+                return opp.position.distanceTo(playerToGoal) < 8;
+            });
+            
+            if (pathClear) score += 4;
+            
+            // Role-based skating preference
+            if (player.role === 'center' || player.role === 'winger') {
+                score += 3; // Forwards should carry puck more
+            }
+            
+            // Avoid skating into corners or boards
+            if (Math.abs(player.position.z) > RINK_HEIGHT/2 - 8) {
+                score -= 3;
+            }
+            
+            return Math.max(0, score);
+        }
+        
+        function hasClearShotToGoal(player) {
+            const goalX = player.team === 'red' ? RINK_WIDTH/2 : -RINK_WIDTH/2;
+            const goalCenter = new THREE.Vector3(goalX, 0, 0);
+            
+            // Check for opponents blocking shot lane
+            const opponents = players.filter(p => p.team !== player.team);
+            const shotBlocked = opponents.some(opp => {
+                const midX = (player.position.x + goalCenter.x) / 2;
+                const midZ = (player.position.z + goalCenter.z) / 2;
+                return opp.position.distanceTo(new THREE.Vector3(midX, 2, midZ)) < 3;
+            });
+            
+            // Check goalie position
+            const goalie = goalies.find(g => g.team !== player.team);
+            if (goalie) {
+                const midX = (player.position.x + goalCenter.x) / 2;
+                const midZ = (player.position.z + goalCenter.z) / 2;
+                const goalieBlocking = goalie.position.distanceTo(new THREE.Vector3(midX, 2, midZ)) < 4;
+                if (goalieBlocking) return false;
+            }
+            
+            return !shotBlocked;
+        }
+        
+        function executeSkate(player) {
+            const goalX = player.team === 'red' ? RINK_WIDTH/2 : -RINK_WIDTH/2;
+            const isOffensive = (player.team === 'red' && puck.position.x > 0) ||
+                               (player.team === 'blue' && puck.position.x < 0);
+            
+            let skateDirection;
+            
+            if (isOffensive) {
+                // Skate toward goal, slightly toward center for better angle
+                const targetZ = player.position.z * 0.7; // Move slightly toward center
+                skateDirection = new THREE.Vector3(goalX - player.position.x, 0, targetZ - player.position.z)
+                    .normalize()
+                    .multiplyScalar(1.2 + Math.random() * 0.6);
+            } else {
+                // Advance up ice toward center line
+                const centerX = 0;
+                skateDirection = new THREE.Vector3(centerX - player.position.x, 0, -player.position.z * 0.4)
+                    .normalize()
+                    .multiplyScalar(1.0 + Math.random() * 0.5);
+            }
+            
+            // Add some variation to skating direction
+            skateDirection.x += (Math.random() - 0.5) * 0.3;
+            skateDirection.z += (Math.random() - 0.5) * 0.3;
+            
+            puck.velocity.copy(skateDirection);
+        }
+        
+        function executePass(passer, receiver) {
+            const passDirection = new THREE.Vector3()
+                .subVectors(receiver.position, puck.position)
+                .normalize()
+                .multiplyScalar(1.8 + Math.random() * 0.8);
+            
+            // Add leading the receiver
+            if (receiver.role === 'winger' || receiver.role === 'center') {
+                const goalX = passer.team === 'red' ? RINK_WIDTH/2 : -RINK_WIDTH/2;
+                const leadDirection = goalX > passer.position.x ? 1 : -1;
+                passDirection.x += leadDirection * 0.5;
+            }
+            
+            puck.velocity.copy(passDirection);
+        }
+        
+        function executeShot(player) {
+            const goalX = player.team === 'red' ? RINK_WIDTH/2 : -RINK_WIDTH/2;
+            const goalZ = (Math.random() - 0.5) * GOAL_WIDTH * 0.7; // Aim within goal
+            
+            const shootDirection = new THREE.Vector3(goalX - puck.position.x, 0, goalZ - puck.position.z)
+                .normalize()
+                .multiplyScalar(2.5 + Math.random() * 1.5);
+            
+            puck.velocity.copy(shootDirection);
+            
+            // Role-based accuracy
+            if (player.role === 'center' || player.role === 'winger') {
+                puck.velocity.z += (Math.random() - 0.5) * 0.15;
+            } else {
+                puck.velocity.z += (Math.random() - 0.5) * 0.3;
+            }
+        }
+        
+        function executeClear(player) {
+            const clearX = player.team === 'red' ? RINK_WIDTH/2 : -RINK_WIDTH/2;
+            const clearDirection = new THREE.Vector3(clearX - puck.position.x, 0, -puck.position.z * 0.2)
+                .normalize()
+                .multiplyScalar(2.0 + Math.random());
+            
+            puck.velocity.copy(clearDirection);
+        }
+        
+        function updatePuck() {
+            // Apply friction
+            puck.velocity.multiplyScalar(0.98);
+            
+            // Move puck
+            puck.position.add(puck.velocity);
+            
+            // Bounce off walls
+            if (Math.abs(puck.position.z) > RINK_HEIGHT/2 - 1) {
+                puck.velocity.z *= -0.8;
+                puck.position.z = Math.sign(puck.position.z) * (RINK_HEIGHT/2 - 1);
+            }
+            
+            // Check for goals
+            if (puck.position.x < -RINK_WIDTH/2 && Math.abs(puck.position.z) < GOAL_WIDTH/2) {
+                // Blue team scores!
+                blueScore++;
+                updateScoreboard();
+                resetPuck();
+                createGoalEffect('blue');
+            } else if (puck.position.x > RINK_WIDTH/2 && Math.abs(puck.position.z) < GOAL_WIDTH/2) {
+                // Red team scores!
+                redScore++;
+                updateScoreboard();
+                resetPuck();
+                createGoalEffect('red');
+            }
+            
+            // Bounce off end walls if not goal
+            if (Math.abs(puck.position.x) > RINK_WIDTH/2 - 1) {
+                puck.velocity.x *= -0.8;
+                puck.position.x = Math.sign(puck.position.x) * (RINK_WIDTH/2 - 1);
+            }
+            
+            // Keep puck on ice
+            puck.position.y = 0.25;
+        }
+        
+        function resetPuck() {
+            puck.position.set(0, 0.25, 0);
+            puck.velocity.set(0, 0, 0);
+            
+            // Reset players to their starting positions
+            players.forEach(player => {
+                player.position.copy(player.startPosition);
+                player.velocity.set(0, 0, 0);
+            });
+        }
+        
+        function createGoalEffect(team) {
+            const color = team === 'red' ? 0xff0040 : 0x0080ff;
+            
+            // Create explosion effect
+            for (let i = 0; i < 20; i++) {
+                const sparkGeometry = new THREE.SphereGeometry(0.2);
+                const sparkMaterial = new THREE.MeshBasicMaterial({ color: color });
+                const spark = new THREE.Mesh(sparkGeometry, sparkMaterial);
+                
+                const goalX = team === 'red' ? RINK_WIDTH/2 : -RINK_WIDTH/2;
+                spark.position.set(goalX, 5, 0);
+                
+                spark.velocity = new THREE.Vector3(
+                    (Math.random() - 0.5) * 10,
+                    Math.random() * 10,
+                    (Math.random() - 0.5) * 10
+                );
+                
+                scene.add(spark);
+                
+                // Remove spark after animation
+                setTimeout(() => {
+                    scene.remove(spark);
+                }, 2000);
+            }
+        }
+        
+        function updateScoreboard() {
+            document.getElementById('redScore').textContent = redScore;
+            document.getElementById('blueScore').textContent = blueScore;
+        }
+        
+        // Camera controls
+        let mouseX = 0, mouseY = 0;
+        let cameraAngle = 0;
+        
+        document.addEventListener('mousemove', (event) => {
+            mouseX = (event.clientX - window.innerWidth / 2) * 0.001;
+            mouseY = (event.clientY - window.innerHeight / 2) * 0.001;
+        });
+        
+        document.addEventListener('keydown', (event) => {
+            switch(event.code) {
+                case 'Space':
+                    event.preventDefault();
+                    redScore = 0;
+                    blueScore = 0;
+                    updateScoreboard();
+                    resetPuck();
+                    break;
+                case 'KeyW':
+                    camera.position.z -= 2;
+                    break;
+                case 'KeyS':
+                    camera.position.z += 2;
+                    break;
+                case 'KeyA':
+                    camera.position.x -= 2;
+                    break;
+                case 'KeyD':
+                    camera.position.x += 2;
+                    break;
+            }
+        });
+        
+        function animate() {
+            requestAnimationFrame(animate);
+            
+            updateAI();
+            updatePuck();
+            updateKnockdownTimers();
+            
+            // Rotate camera slightly based on mouse
+            cameraAngle += mouseX * 0.02;
+            camera.position.x = Math.sin(cameraAngle) * 80;
+            camera.position.z = Math.cos(cameraAngle) * 80;
+            camera.lookAt(0, 0, 0);
+            
+            // Animate particles
+            if (particleSystem) {
+                particleSystem.rotation.y += 0.002;
+            }
+            
+            renderer.render(scene, camera);
+        }
+        
+        // Handle window resize
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+        
+        // Start the game
+        init();
+    </script>
+</body>
+</html>
