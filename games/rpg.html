@@ -1,0 +1,1139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Earthbound Battle Engine - Three.js</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background: #000;
+            font-family: 'Courier New', monospace;
+            overflow: hidden;
+            user-select: none;
+        }
+
+        #gameContainer {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+        }
+
+        #ui {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            height: 200px;
+            background: linear-gradient(to bottom, rgba(0,0,0,0.8), rgba(0,0,0,0.95));
+            padding: 20px;
+            box-sizing: border-box;
+            z-index: 100;
+        }
+
+        .party-cards {
+            display: flex;
+            gap: 15px;
+            margin-bottom: 15px;
+        }
+
+        .party-card {
+            background: linear-gradient(135deg, #2a2a4a, #1a1a3a);
+            border: 2px solid #4a4a6a;
+            border-radius: 8px;
+            padding: 12px;
+            flex: 1;
+            color: white;
+            transition: all 0.3s ease;
+        }
+
+        .party-card.active {
+            border-color: #ffff00;
+            box-shadow: 0 0 15px rgba(255, 255, 0, 0.5);
+        }
+
+        .party-card.selected {
+            background: linear-gradient(135deg, #4a4a2a, #3a3a1a);
+            border-color: #8a8a4a;
+        }
+
+        .party-name {
+            font-weight: bold;
+            font-size: 14px;
+            margin-bottom: 8px;
+        }
+
+        .party-stats {
+            font-size: 12px;
+            display: flex;
+            justify-content: space-between;
+        }
+
+        .hp-bar, .mp-bar {
+            width: 100%;
+            height: 8px;
+            background: #333;
+            border-radius: 4px;
+            margin: 2px 0;
+            overflow: hidden;
+        }
+
+        .hp-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #00ff00, #88ff88);
+            transition: width 0.5s ease;
+        }
+
+        .mp-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #0088ff, #88ccff);
+            transition: width 0.5s ease;
+        }
+
+        .action-menu {
+            display: flex;
+            gap: 10px;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+
+        .action-menu.visible {
+            opacity: 1;
+        }
+
+        .action-btn {
+            background: linear-gradient(135deg, #3a3a5a, #2a2a4a);
+            border: 2px solid #5a5a7a;
+            color: white;
+            padding: 10px 15px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-family: inherit;
+            font-size: 12px;
+            transition: all 0.2s ease;
+        }
+
+        .action-btn:hover {
+            background: linear-gradient(135deg, #4a4a6a, #3a3a5a);
+            border-color: #7a7a9a;
+        }
+
+        .action-btn:active {
+            transform: scale(0.95);
+        }
+
+        .battle-log {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            right: 20px;
+            background: rgba(0, 0, 0, 0.8);
+            border: 2px solid #4a4a6a;
+            border-radius: 8px;
+            padding: 15px;
+            color: white;
+            font-size: 14px;
+            max-height: 150px;
+            overflow-y: auto;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+            z-index: 100;
+        }
+
+        .battle-log.visible {
+            opacity: 1;
+        }
+
+        .log-entry {
+            margin-bottom: 5px;
+            animation: fadeIn 0.5s ease;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .spell-menu, .target-menu {
+            display: none;
+            position: absolute;
+            bottom: 220px;
+            left: 20px;
+            right: 20px;
+            background: rgba(0, 0, 0, 0.9);
+            border: 2px solid #4a4a6a;
+            border-radius: 8px;
+            padding: 15px;
+            z-index: 110;
+        }
+
+        .spell-menu.visible, .target-menu.visible {
+            display: block;
+        }
+
+        .spell-category {
+            margin-bottom: 15px;
+        }
+
+        .spell-category h3 {
+            color: #ffff00;
+            margin: 0 0 10px 0;
+            font-size: 14px;
+        }
+
+        .spell-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+
+        .spell-btn, .target-btn {
+            background: linear-gradient(135deg, #3a3a5a, #2a2a4a);
+            border: 2px solid #5a5a7a;
+            color: white;
+            padding: 8px 12px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-family: inherit;
+            font-size: 11px;
+            transition: all 0.2s ease;
+            flex: 1;
+            min-width: 120px;
+        }
+
+        .spell-btn:hover, .target-btn:hover {
+            background: linear-gradient(135deg, #4a4a6a, #3a3a5a);
+            border-color: #7a7a9a;
+        }
+
+        .spell-btn:active, .target-btn:active {
+            transform: scale(0.95);
+        }
+
+        .spell-btn.disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .spell-description {
+            font-size: 10px;
+            color: #ccc;
+            margin-top: 3px;
+        }
+
+        .target-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+
+        .target-btn {
+            flex: 1;
+            min-width: 100px;
+        }
+
+        .target-btn.enemy {
+            border-color: #ff6666;
+        }
+
+        .target-btn.ally {
+            border-color: #66ff66;
+        }
+
+        .menu-header {
+            color: #ffff00;
+            font-weight: bold;
+            margin-bottom: 10px;
+            font-size: 14px;
+        }
+
+        .cancel-btn {
+            background: linear-gradient(135deg, #5a3a3a, #4a2a2a);
+            border: 2px solid #7a5a5a;
+            color: white;
+            padding: 8px 15px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-family: inherit;
+            font-size: 12px;
+            margin-top: 10px;
+        }
+
+        .enemy-hp-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #00ff00, #88ff88);
+            transition: width 0.5s ease;
+        }
+
+        .enemy-ui {
+            position: absolute;
+            background: rgba(0, 0, 0, 0.7);
+            border: 1px solid #555;
+            border-radius: 4px;
+            padding: 5px 10px;
+            color: white;
+            font-size: 12px;
+            pointer-events: none;
+            z-index: 50;
+        }
+
+        .enemy-hp-bar {
+            width: 80px;
+            height: 6px;
+            background: #333;
+            border-radius: 3px;
+            margin-top: 3px;
+            overflow: hidden;
+        }
+
+        .turn-indicator {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background: rgba(255, 255, 0, 0.2);
+            border: 2px solid #ffff00;
+            border-radius: 8px;
+            padding: 10px;
+            color: #ffff00;
+            font-weight: bold;
+            z-index: 100;
+        }
+    </style>
+</head>
+<body>
+    <div id="gameContainer">
+        <div class="turn-indicator">
+            <div id="turnPhase">Select Actions</div>
+        </div>
+        
+        <div class="battle-log" id="battleLog">
+            <div class="log-entry">Battle begins!</div>
+        </div>
+        
+        <div id="ui">
+            <div class="party-cards" id="partyCards"></div>
+            <div class="action-menu" id="actionMenu">
+                <button class="action-btn" onclick="selectAction('attack')">Attack</button>
+                <button class="action-btn" onclick="selectAction('magic')">Magic</button>
+                <button class="action-btn" onclick="selectAction('item')">Item</button>
+                <button class="action-btn" onclick="selectAction('defend')">Defend</button>
+            </div>
+            
+            <div class="spell-menu" id="spellMenu">
+                <div class="menu-header">Choose a Spell:</div>
+                <div class="spell-category">
+                    <h3>Offensive Magic</h3>
+                    <div class="spell-list" id="offensiveSpells"></div>
+                </div>
+                <div class="spell-category">
+                    <h3>Defensive Magic</h3>
+                    <div class="spell-list" id="defensiveSpells"></div>
+                </div>
+                <button class="cancel-btn" onclick="cancelSpellSelection()">Cancel</button>
+            </div>
+            
+            <div class="target-menu" id="targetMenu">
+                <div class="menu-header" id="targetHeader">Choose Target:</div>
+                <div class="target-list" id="targetList"></div>
+                <button class="cancel-btn" onclick="cancelTargetSelection()">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script>
+        // Three.js Setup
+        let scene, camera, renderer, clock;
+        let backgroundMesh, enemies = [], enemyUIs = [];
+        
+        // Game State
+        let gameState = {
+            phase: 'selectActions',
+            currentPartyMember: 0,
+            selectedActions: [],
+            turnQueue: [],
+            battleTime: 0
+        };
+
+        // Party Members
+        const party = [
+            {
+                name: "Hero",
+                hp: 85,
+                maxHp: 100,
+                mp: 40,
+                maxMp: 50,
+                speed: 12,
+                action: null
+            },
+            {
+                name: "Paula",
+                hp: 70,
+                maxHp: 80,
+                mp: 60,
+                maxMp: 70,
+                speed: 10,
+                action: null
+            },
+            {
+                name: "Jeff",
+                hp: 55,
+                maxHp: 65,
+                mp: 25,
+                maxMp: 30,
+                speed: 8,
+                action: null
+            }
+        ];
+
+        // Enemy Data
+        const enemyData = [
+            {
+                name: "Starman",
+                hp: 120,
+                maxHp: 120,
+                mp: 30,
+                maxMp: 30,
+                speed: 9,
+                position: [0.5, 0, 0],
+                action: null
+            },
+            {
+                name: "Abstract Art",
+                hp: 80,
+                maxHp: 80,
+                mp: 45,
+                maxMp: 45,
+                speed: 11,
+                position: [-0.5, 0.5, 0],
+                action: null
+            }
+        ];
+
+        function initThreeJS() {
+            // Scene
+            scene = new THREE.Scene();
+            
+            // Camera - adjust for mobile
+            const isMobile = window.innerWidth < 768;
+            const fov = isMobile ? 85 : 75;
+            camera = new THREE.PerspectiveCamera(fov, window.innerWidth / window.innerHeight, 0.1, 1000);
+            
+            // Position camera based on screen size
+            if (isMobile) {
+                camera.position.set(0, -0.5, 4);
+            } else {
+                camera.position.set(0, 0, 5);
+            }
+            
+            // Renderer
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setClearColor(0x000000);
+            document.getElementById('gameContainer').appendChild(renderer.domElement);
+            
+            // Clock
+            clock = new THREE.Clock();
+            
+            // Lights
+            const ambientLight = new THREE.AmbientLight(0x404040, 0.4);
+            scene.add(ambientLight);
+            
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 0.6);
+            directionalLight.position.set(0, 5, 5);
+            scene.add(directionalLight);
+            
+            // Create background
+            createPulsatingBackground();
+            
+            // Create enemies
+            createEnemies();
+            
+            // Handle resize
+            window.addEventListener('resize', onWindowResize);
+        }
+
+        function createPulsatingBackground() {
+            // Create multiple layered planes for the Earthbound effect
+            const backgroundGroup = new THREE.Group();
+            
+            for (let i = 0; i < 5; i++) {
+                const geometry = new THREE.PlaneGeometry(20, 15);
+                
+                // Custom shader material for pulsating effect
+                const material = new THREE.ShaderMaterial({
+                    uniforms: {
+                        time: { value: 0 },
+                        layer: { value: i },
+                        resolution: { value: new THREE.Vector2(window.innerWidth, window.innerHeight) }
+                    },
+                    vertexShader: `
+                        varying vec2 vUv;
+                        void main() {
+                            vUv = uv;
+                            gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+                        }
+                    `,
+                    fragmentShader: `
+                        uniform float time;
+                        uniform float layer;
+                        uniform vec2 resolution;
+                        varying vec2 vUv;
+                        
+                        // Zigzag function
+                        float zigzag(float x, float freq) {
+                            float t = fract(x * freq);
+                            return abs(2.0 * t - 1.0);
+                        }
+                        
+                        void main() {
+                            vec2 uv = vUv;
+                            
+                            // Create diagonal coordinates for zigzag patterns
+                            float diagonal1 = (uv.x + uv.y) * 0.5;
+                            float diagonal2 = (uv.x - uv.y) * 0.5;
+                            
+                            // Time-based animation
+                            float timeOffset = time * 0.001 + layer * 0.3;
+                            
+                            // Multiple zigzag frequencies for complexity
+                            float zigzag1 = zigzag(diagonal1 + timeOffset, 8.0 + layer * 2.0);
+                            float zigzag2 = zigzag(diagonal2 - timeOffset * 0.7, 6.0 + layer * 1.5);
+                            float zigzag3 = zigzag(uv.x + sin(uv.y * 10.0 + timeOffset * 2.0) * 0.1, 12.0);
+                            
+                            // Combine zigzag patterns
+                            float pattern = (zigzag1 + zigzag2 * 0.7 + zigzag3 * 0.5) / 2.2;
+                            
+                            // Add some waviness to the stripes
+                            float wave = sin(uv.y * 15.0 + timeOffset * 3.0) * 0.1;
+                            float stripes = zigzag(uv.x + wave, 20.0 + sin(timeOffset) * 5.0);
+                            
+                            // Combine all patterns
+                            float finalPattern = mix(pattern, stripes, 0.4);
+                            
+                            // Pulsing effect
+                            float pulse = sin(time * 0.002 + layer * 0.8) * 0.3 + 0.7;
+                            finalPattern *= pulse;
+                            
+                            // Earthbound-style color palette
+                            vec3 color1 = vec3(1.0, 0.2, 0.8); // Hot pink
+                            vec3 color2 = vec3(0.2, 1.0, 0.3); // Bright green
+                            vec3 color3 = vec3(0.3, 0.3, 1.0); // Blue
+                            vec3 color4 = vec3(1.0, 1.0, 0.2); // Yellow
+                            
+                            // Color cycling based on layer and time
+                            float colorShift = time * 0.0005 + layer * 0.5;
+                            vec3 colorA = mix(color1, color2, sin(colorShift) * 0.5 + 0.5);
+                            vec3 colorB = mix(color3, color4, cos(colorShift * 1.3) * 0.5 + 0.5);
+                            
+                            vec3 finalColor = mix(colorA, colorB, finalPattern);
+                            
+                            // Distance-based alpha for fading edges
+                            vec2 center = vec2(0.5, 0.5);
+                            float dist = distance(uv, center);
+                            float alpha = (1.0 - smoothstep(0.3, 1.0, dist)) * 0.15 * pulse;
+                            
+                            gl_FragColor = vec4(finalColor, alpha);
+                        }
+                    `,
+                    transparent: true,
+                    blending: THREE.AdditiveBlending
+                });
+                
+                const plane = new THREE.Mesh(geometry, material);
+                plane.position.z = -2 - i * 0.1;
+                backgroundGroup.add(plane);
+            }
+            
+            // Add animated zigzag particles
+            const zigzagGeometry = new THREE.BufferGeometry();
+            const zigzagCount = 50;
+            const positions = new Float32Array(zigzagCount * 3);
+            const colors = new Float32Array(zigzagCount * 3);
+            const sizes = new Float32Array(zigzagCount);
+            
+            for (let i = 0; i < zigzagCount; i++) {
+                // Create zigzag pattern positions
+                const t = i / zigzagCount;
+                const x = (Math.random() - 0.5) * 20;
+                const y = (Math.random() - 0.5) * 15;
+                const z = -2 + Math.random() * 1;
+                
+                positions[i * 3] = x;
+                positions[i * 3 + 1] = y;
+                positions[i * 3 + 2] = z;
+                
+                // Bright Earthbound colors
+                const colorPalette = [
+                    [1.0, 0.2, 0.8], // Hot pink
+                    [0.2, 1.0, 0.3], // Bright green  
+                    [1.0, 1.0, 0.2], // Yellow
+                    [0.3, 0.3, 1.0], // Blue
+                    [1.0, 0.5, 0.0]  // Orange
+                ];
+                const colorIndex = Math.floor(Math.random() * colorPalette.length);
+                colors[i * 3] = colorPalette[colorIndex][0];
+                colors[i * 3 + 1] = colorPalette[colorIndex][1];
+                colors[i * 3 + 2] = colorPalette[colorIndex][2];
+                
+                sizes[i] = Math.random() * 0.3 + 0.1;
+            }
+            
+            zigzagGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+            zigzagGeometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+            zigzagGeometry.setAttribute('size', new THREE.BufferAttribute(sizes, 1));
+            
+            const zigzagMaterial = new THREE.PointsMaterial({
+                size: 0.2,
+                vertexColors: true,
+                transparent: true,
+                opacity: 0.8,
+                blending: THREE.AdditiveBlending
+            });
+            
+            const zigzagParticles = new THREE.Points(zigzagGeometry, zigzagMaterial);
+            backgroundGroup.add(zigzagParticles);
+            
+            backgroundMesh = backgroundGroup;
+            scene.add(backgroundMesh);
+        }
+
+        function createEnemies() {
+            enemyData.forEach((enemyInfo, index) => {
+                let enemyMesh;
+                
+                if (enemyInfo.name === "Starman") {
+                    enemyMesh = createStarman();
+                } else if (enemyInfo.name === "Abstract Art") {
+                    enemyMesh = createAbstractArt();
+                }
+                
+                enemyMesh.position.set(...enemyInfo.position);
+                enemyMesh.userData = { ...enemyInfo, index };
+                
+                scene.add(enemyMesh);
+                enemies.push(enemyMesh);
+                
+                // Create UI element for this enemy
+                createEnemyUI(enemyMesh, index);
+            });
+            
+            // Position enemies appropriately for current screen size
+            repositionEnemiesForScreen();
+        }
+
+        function createStarman() {
+            const group = new THREE.Group();
+            
+            // Body
+            const bodyGeometry = new THREE.BoxGeometry(0.6, 1.2, 0.3);
+            const bodyMaterial = new THREE.MeshLambertMaterial({ color: 0x4a4a8a });
+            const body = new THREE.Mesh(bodyGeometry, bodyMaterial);
+            group.add(body);
+            
+            // Head
+            const headGeometry = new THREE.SphereGeometry(0.35, 16, 16);
+            const headMaterial = new THREE.MeshLambertMaterial({ color: 0x6a6aaa });
+            const head = new THREE.Mesh(headGeometry, headMaterial);
+            head.position.y = 0.8;
+            group.add(head);
+            
+            // Eyes
+            const eyeGeometry = new THREE.SphereGeometry(0.08, 8, 8);
+            const eyeMaterial = new THREE.MeshBasicMaterial({ color: 0xff0000 });
+            
+            const leftEye = new THREE.Mesh(eyeGeometry, eyeMaterial);
+            leftEye.position.set(-0.15, 0.85, 0.25);
+            group.add(leftEye);
+            
+            const rightEye = new THREE.Mesh(eyeGeometry, eyeMaterial);
+            rightEye.position.set(0.15, 0.85, 0.25);
+            group.add(rightEye);
+            
+            // Star on chest
+            const starGeometry = createStarGeometry();
+            const starMaterial = new THREE.MeshBasicMaterial({ color: 0xffff00 });
+            const star = new THREE.Mesh(starGeometry, starMaterial);
+            star.position.set(0, 0.2, 0.16);
+            star.scale.setScalar(0.2);
+            group.add(star);
+            
+            return group;
+        }
+
+        function createAbstractArt() {
+            const group = new THREE.Group();
+            
+            // Create multiple floating spheres with different colors
+            const colors = [0xff4444, 0x44ff44, 0x4444ff, 0xffff44, 0xff44ff, 0x44ffff];
+            
+            for (let i = 0; i < 8; i++) {
+                const geometry = new THREE.SphereGeometry(0.1 + Math.random() * 0.15, 12, 12);
+                const material = new THREE.MeshBasicMaterial({ 
+                    color: colors[i % colors.length],
+                    transparent: true,
+                    opacity: 0.8
+                });
+                
+                const sphere = new THREE.Mesh(geometry, material);
+                
+                const angle = (i / 8) * Math.PI * 2;
+                const radius = 0.5 + Math.random() * 0.3;
+                sphere.position.set(
+                    Math.cos(angle) * radius,
+                    (Math.random() - 0.5) * 0.5,
+                    Math.sin(angle) * radius
+                );
+                
+                sphere.userData = { 
+                    originalPosition: sphere.position.clone(),
+                    rotationSpeed: 0.01 + Math.random() * 0.02,
+                    bobSpeed: 0.005 + Math.random() * 0.01
+                };
+                
+                group.add(sphere);
+            }
+            
+            return group;
+        }
+
+        function createStarGeometry() {
+            const shape = new THREE.Shape();
+            const outerRadius = 1;
+            const innerRadius = 0.4;
+            const points = 5;
+            
+            for (let i = 0; i <= points * 2; i++) {
+                const angle = (i / (points * 2)) * Math.PI * 2;
+                const radius = i % 2 === 0 ? outerRadius : innerRadius;
+                const x = Math.cos(angle) * radius;
+                const y = Math.sin(angle) * radius;
+                
+                if (i === 0) {
+                    shape.moveTo(x, y);
+                } else {
+                    shape.lineTo(x, y);
+                }
+            }
+            
+            const geometry = new THREE.ShapeGeometry(shape);
+            return geometry;
+        }
+
+        function createEnemyUI(enemyMesh, index) {
+            const uiElement = document.createElement('div');
+            uiElement.className = 'enemy-ui';
+            uiElement.innerHTML = `
+                <div>${enemyMesh.userData.name}</div>
+                <div class="enemy-hp-bar">
+                    <div class="enemy-hp-fill" id="enemyHP${index}" style="width: 100%"></div>
+                </div>
+            `;
+            
+            document.getElementById('gameContainer').appendChild(uiElement);
+            enemyUIs.push(uiElement);
+        }
+
+        function updateEnemyUIs() {
+            enemies.forEach((enemy, index) => {
+                if (enemy.userData.hp <= 0) {
+                    enemyUIs[index].style.display = 'none';
+                    return;
+                }
+                
+                // Project 3D position to 2D screen position
+                const vector = new THREE.Vector3();
+                enemy.getWorldPosition(vector);
+                vector.project(camera);
+                
+                const x = (vector.x * 0.5 + 0.5) * window.innerWidth;
+                const y = (vector.y * -0.5 + 0.5) * window.innerHeight - 60;
+                
+                enemyUIs[index].style.left = (x - 40) + 'px';
+                enemyUIs[index].style.top = y + 'px';
+                
+                // Update HP bar
+                const hpPercent = (enemy.userData.hp / enemy.userData.maxHp) * 100;
+                const hpFill = document.getElementById(`enemyHP${index}`);
+                if (hpFill) {
+                    hpFill.style.width = hpPercent + '%';
+                    hpFill.style.background = hpPercent > 50 ? 
+                        'linear-gradient(90deg, #00ff00, #88ff88)' : 
+                        hpPercent > 25 ? 
+                        'linear-gradient(90deg, #ffff00, #ffff88)' : 
+                        'linear-gradient(90deg, #ff0000, #ff8888)';
+                }
+            });
+        }
+
+        function animateEnemies(time) {
+            enemies.forEach((enemy, index) => {
+                if (enemy.userData.hp <= 0) {
+                    enemy.visible = false;
+                    return;
+                }
+                
+                // Bobbing animation
+                const bobOffset = Math.sin(time * 0.002 + index) * 0.1;
+                enemy.position.y = enemy.userData.position[1] + bobOffset;
+                
+                // Breathing scale
+                const scaleOffset = 1 + Math.sin(time * 0.003 + index * 0.5) * 0.05;
+                enemy.scale.setScalar(scaleOffset);
+                
+                // Rotate Abstract Art spheres
+                if (enemy.userData.name === "Abstract Art") {
+                    enemy.children.forEach((sphere, sphereIndex) => {
+                        if (sphere.userData.rotationSpeed) {
+                            const angle = time * sphere.userData.rotationSpeed + sphereIndex;
+                            const radius = 0.5;
+                            sphere.position.x = Math.cos(angle) * radius;
+                            sphere.position.z = Math.sin(angle) * radius;
+                            sphere.position.y = sphere.userData.originalPosition.y + 
+                                              Math.sin(time * sphere.userData.bobSpeed + sphereIndex) * 0.2;
+                        }
+                    });
+                }
+            });
+        }
+
+        function animateBackground(time) {
+            if (backgroundMesh) {
+                // Update shader uniforms
+                backgroundMesh.children.forEach((child, index) => {
+                    if (child.material && child.material.uniforms) {
+                        child.material.uniforms.time.value = time;
+                    }
+                });
+                
+                // Animate zigzag particles in patterns
+                const particles = backgroundMesh.children.find(child => child.type === 'Points');
+                if (particles) {
+                    const positions = particles.geometry.attributes.position.array;
+                    const sizes = particles.geometry.attributes.size.array;
+                    
+                    for (let i = 0; i < positions.length; i += 3) {
+                        // Create zigzag movement
+                        const speed = 0.001 + (i / positions.length) * 0.002;
+                        const zigzagFreq = 5.0 + (i % 10);
+                        const timePhase = time * speed + i * 0.1;
+                        
+                        // Zigzag pattern movement
+                        positions[i] += Math.sin(timePhase * 2.0) * 0.02; // X movement
+                        positions[i + 1] += Math.cos(timePhase) * 0.015; // Y movement
+                        
+                        // Add zigzag effect to Y position
+                        const zigzagOffset = Math.abs(Math.sin(positions[i] * zigzagFreq + timePhase)) * 0.5;
+                        positions[i + 1] += zigzagOffset * 0.01;
+                        
+                        // Wrap around screen
+                        if (positions[i] > 10) positions[i] = -10;
+                        if (positions[i] < -10) positions[i] = 10;
+                        if (positions[i + 1] > 7.5) positions[i + 1] = -7.5;
+                        if (positions[i + 1] < -7.5) positions[i + 1] = 7.5;
+                        
+                        // Animate size for pulsing effect
+                        if (sizes) {
+                            const sizeIndex = i / 3;
+                            sizes[sizeIndex] = 0.1 + Math.sin(timePhase * 3.0) * 0.1;
+                        }
+                    }
+                    
+                    particles.geometry.attributes.position.needsUpdate = true;
+                    if (sizes) {
+                        particles.geometry.attributes.size.needsUpdate = true;
+                    }
+                }
+            }
+        }
+
+        function onWindowResize() {
+            const isMobile = window.innerWidth < 768;
+            
+            // Update camera aspect ratio
+            camera.aspect = window.innerWidth / window.innerHeight;
+            
+            // Adjust FOV and position for mobile
+            if (isMobile) {
+                camera.fov = 85;
+                camera.position.set(0, -0.5, 4);
+            } else {
+                camera.fov = 75;
+                camera.position.set(0, 0, 5);
+            }
+            
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            
+            // Update enemy positions for better mobile centering
+            repositionEnemiesForScreen();
+        }
+        
+        function repositionEnemiesForScreen() {
+            const isMobile = window.innerWidth < 768;
+            
+            enemies.forEach((enemy, index) => {
+                const enemyInfo = enemyData[index];
+                if (isMobile) {
+                    // Tighter spacing on mobile, more centered
+                    if (index === 0) {
+                        enemy.position.set(0, 0.3, 0);
+                        enemyInfo.position = [0, 0.3, 0];
+                    } else if (index === 1) {
+                        enemy.position.set(0, -0.3, -0.2);
+                        enemyInfo.position = [0, -0.3, -0.2];
+                    }
+                } else {
+                    // Desktop spacing
+                    if (index === 0) {
+                        enemy.position.set(0.5, 0, 0);
+                        enemyInfo.position = [0.5, 0, 0];
+                    } else if (index === 1) {
+                        enemy.position.set(-0.5, 0.5, 0);
+                        enemyInfo.position = [-0.5, 0.5, 0];
+                    }
+                }
+            });
+        }
+
+        // UI Management Functions (same as before)
+        function updatePartyCards() {
+            const container = document.getElementById('partyCards');
+            container.innerHTML = '';
+            
+            party.forEach((member, index) => {
+                const card = document.createElement('div');
+                card.className = `party-card ${index === gameState.currentPartyMember ? 'active' : ''} ${member.action ? 'selected' : ''}`;
+                
+                const hpPercent = (member.hp / member.maxHp) * 100;
+                const mpPercent = (member.mp / member.maxMp) * 100;
+                
+                card.innerHTML = `
+                    <div class="party-name">${member.name}</div>
+                    <div class="party-stats">
+                        <span>HP: ${member.hp}/${member.maxHp}</span>
+                        <span>MP: ${member.mp}/${member.maxMp}</span>
+                    </div>
+                    <div class="hp-bar"><div class="hp-fill" style="width: ${hpPercent}%"></div></div>
+                    <div class="mp-bar"><div class="mp-fill" style="width: ${mpPercent}%"></div></div>
+                `;
+                
+                container.appendChild(card);
+            });
+        }
+
+        function selectAction(actionType) {
+            if (gameState.phase !== 'selectActions') return;
+            
+            const currentMember = party[gameState.currentPartyMember];
+            currentMember.action = {
+                type: actionType,
+                user: currentMember,
+                target: actionType === 'attack' ? enemyData[0] : currentMember
+            };
+            
+            addBattleLog(`${currentMember.name} prepares to ${actionType}!`);
+            
+            gameState.currentPartyMember++;
+            
+            if (gameState.currentPartyMember >= party.length) {
+                executeActions();
+            } else {
+                updatePartyCards();
+                showActionMenu();
+            }
+        }
+
+        function executeActions() {
+            gameState.phase = 'executingActions';
+            document.getElementById('actionMenu').classList.remove('visible');
+            document.getElementById('turnPhase').textContent = 'Executing Actions...';
+            
+            gameState.turnQueue = [];
+            
+            // Add party actions
+            party.forEach(member => {
+                if (member.action && member.hp > 0) {
+                    gameState.turnQueue.push({
+                        entity: member,
+                        action: member.action,
+                        speed: member.speed
+                    });
+                }
+            });
+            
+            // Add enemy actions
+            enemyData.forEach(enemy => {
+                if (enemy.hp > 0) {
+                    enemy.action = {
+                        type: 'attack',
+                        user: enemy,
+                        target: party[Math.floor(Math.random() * party.length)]
+                    };
+                    gameState.turnQueue.push({
+                        entity: enemy,
+                        action: enemy.action,
+                        speed: enemy.speed
+                    });
+                }
+            });
+            
+            gameState.turnQueue.sort((a, b) => b.speed - a.speed);
+            executeNextAction();
+        }
+
+        function executeNextAction() {
+            if (gameState.turnQueue.length === 0) {
+                endTurn();
+                return;
+            }
+            
+            const currentAction = gameState.turnQueue.shift();
+            const { entity, action } = currentAction;
+            
+            if (entity.hp <= 0) {
+                executeNextAction();
+                return;
+            }
+            
+            switch (action.type) {
+                case 'attack':
+                    executeAttack(entity, action.target);
+                    break;
+                case 'magic':
+                    executeMagic(entity, action.target);
+                    break;
+                case 'item':
+                    executeItem(entity, action.target);
+                    break;
+                case 'defend':
+                    executeDefend(entity);
+                    break;
+            }
+            
+            setTimeout(executeNextAction, 1500);
+        }
+
+        function executeAttack(attacker, target) {
+            const damage = Math.floor(Math.random() * 25) + 15;
+            target.hp = Math.max(0, target.hp - damage);
+            
+            // Update enemy mesh data if target is enemy
+            const enemyMesh = enemies.find(e => e.userData.name === target.name);
+            if (enemyMesh) {
+                enemyMesh.userData.hp = target.hp;
+            }
+            
+            addBattleLog(`${attacker.name} attacks ${target.name} for ${damage} damage!`);
+            
+            if (target.hp === 0) {
+                addBattleLog(`${target.name} is defeated!`);
+            }
+        }
+
+        function executeMagic(caster, target) {
+            if (caster.mp < 5) {
+                addBattleLog(`${caster.name} doesn't have enough MP!`);
+                return;
+            }
+            
+            caster.mp -= 5;
+            
+            if (party.includes(caster)) {
+                const healing = Math.floor(Math.random() * 20) + 25;
+                target.hp = Math.min(target.maxHp, target.hp + healing);
+                addBattleLog(`${caster.name} heals ${target.name} for ${healing} HP!`);
+            } else {
+                const damage = Math.floor(Math.random() * 30) + 20;
+                target.hp = Math.max(0, target.hp - damage);
+                addBattleLog(`${caster.name} casts PSI on ${target.name} for ${damage} damage!`);
+            }
+        }
+
+        function executeItem(user, target) {
+            const healing = Math.floor(Math.random() * 15) + 20;
+            target.hp = Math.min(target.maxHp, target.hp + healing);
+            addBattleLog(`${user.name} uses an item on ${target.name} for ${healing} HP!`);
+        }
+
+        function executeDefend(defender) {
+            addBattleLog(`${defender.name} takes a defensive stance!`);
+        }
+
+        function endTurn() {
+            const partyAlive = party.some(member => member.hp > 0);
+            const enemiesAlive = enemyData.some(enemy => enemy.hp > 0);
+            
+            if (!partyAlive) {
+                gameState.phase = 'battleEnd';
+                addBattleLog('The party has been defeated...');
+                document.getElementById('turnPhase').textContent = 'Defeat';
+                return;
+            }
+            
+            if (!enemiesAlive) {
+                gameState.phase = 'battleEnd';
+                addBattleLog('Victory! All enemies defeated!');
+                document.getElementById('turnPhase').textContent = 'Victory!';
+                return;
+            }
+            
+            party.forEach(member => member.action = null);
+            enemyData.forEach(enemy => enemy.action = null);
+            gameState.currentPartyMember = 0;
+            gameState.phase = 'selectActions';
+            
+            document.getElementById('turnPhase').textContent = 'Select Actions';
+            updatePartyCards();
+            showActionMenu();
+        }
+
+        function showActionMenu() {
+            document.getElementById('actionMenu').classList.add('visible');
+        }
+
+        function addBattleLog(message) {
+            const log = document.getElementById('battleLog');
+            const entry = document.createElement('div');
+            entry.className = 'log-entry';
+            entry.textContent = message;
+            log.appendChild(entry);
+            log.scrollTop = log.scrollHeight;
+            log.classList.add('visible');
+            
+            while (log.children.length > 10) {
+                log.removeChild(log.firstChild);
+            }
+        }
+
+        // Main Game Loop
+        function animate() {
+            requestAnimationFrame(animate);
+            
+            const elapsedTime = clock.getElapsedTime() * 1000;
+            gameState.battleTime = elapsedTime;
+            
+            // Update animations
+            animateBackground(elapsedTime);
+            animateEnemies(elapsedTime);
+            updateEnemyUIs();
+            
+            // Render
+            renderer.render(scene, camera);
+        }
+
+        // Initialize Game
+        function initGame() {
+            initThreeJS();
+            updatePartyCards();
+            showActionMenu();
+            addBattleLog('Choose your actions wisely!');
+            animate();
+        }
+
+        // Start the game
+        initGame();
+    </script>
+</body>
+</html>
