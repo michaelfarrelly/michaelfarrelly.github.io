@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Planet Formation Simulation</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <style>
+        body {
+            margin: 0;
+            background: #000;
+            overflow: hidden;
+            font-family: Arial, sans-serif;
+        }
+        #container {
+            width: 100vw;
+            height: 100vh;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            grid-template-rows: 1fr 1fr;
+        }
+        .viewport {
+            position: relative;
+            border: 1px solid #333;
+        }
+        .label {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            color: #fff;
+            background: rgba(0,0,0,0.7);
+            padding: 5px 10px;
+            border-radius: 3px;
+            font-size: 14px;
+            z-index: 100;
+        }
+        #controls {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            color: #fff;
+            background: rgba(0,0,0,0.8);
+            padding: 15px;
+            border-radius: 5px;
+            z-index: 100;
+        }
+        button {
+            background: #444;
+            color: #fff;
+            border: none;
+            padding: 8px 15px;
+            margin: 5px;
+            border-radius: 3px;
+            cursor: pointer;
+        }
+        button:hover {
+            background: #666;
+        }
+    </style>
+</head>
+<body>
+    <div id="container">
+        <div class="viewport" id="viewport1">
+            <div class="label">Stage 1: Debris Field</div>
+        </div>
+        <div class="viewport" id="viewport2">
+            <div class="label">Stage 2: Initial Clumping</div>
+        </div>
+        <div class="viewport" id="viewport3">
+            <div class="label">Stage 3: Accretion</div>
+        </div>
+        <div class="viewport" id="viewport4">
+            <div class="label">Stage 4: Planet Formation</div>
+        </div>
+    </div>
+    
+    <div id="controls">
+        <div>Planet Formation Simulation</div>
+        <button onclick="resetSimulation()">Reset</button>
+        <button onclick="togglePause()">Pause/Resume</button>
+    </div>
+
+    <script>
+        let scenes = [], renderers = [], cameras = [], paused = false;
+        let particleSystems = [];
+        let planetCores = [];
+        
+        const PARTICLE_COUNT = [2000, 1500, 800, 200];
+        const STAGE_SPEEDS = [0.01, 0.02, 0.03, 0.04];
+        
+        function init() {
+            // Create four separate scenes
+            for (let i = 0; i < 4; i++) {
+                const scene = new THREE.Scene();
+                
+                // Add ambient lighting to each scene
+                const ambientLight = new THREE.AmbientLight(0x404040, 0.3);
+                scene.add(ambientLight);
+                
+                // Add directional light to each scene
+                const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+                directionalLight.position.set(50, 50, 50);
+                scene.add(directionalLight);
+                
+                scenes.push(scene);
+                
+                // Create viewport and renderer
+                const viewport = document.getElementById('viewport' + (i + 1));
+                const renderer = new THREE.WebGLRenderer({ antialias: true });
+                renderer.setSize(viewport.clientWidth, viewport.clientHeight);
+                renderer.setClearColor(0x000511);
+                viewport.appendChild(renderer.domElement);
+                renderers.push(renderer);
+                
+                // Create camera for each viewport
+                const camera = new THREE.PerspectiveCamera(75, viewport.clientWidth / viewport.clientHeight, 0.1, 1000);
+                camera.position.set(30, 20, 30);
+                camera.lookAt(0, 0, 0);
+                cameras.push(camera);
+                
+                // Create particle system for each stage
+                createParticleSystem(i);
+            }
+            
+            // Handle window resize
+            window.addEventListener('resize', onWindowResize);
+        }
+        
+        function createParticleSystem(stage) {
+            const particleCount = PARTICLE_COUNT[stage];
+            const geometry = new THREE.BufferGeometry();
+            const positions = new Float32Array(particleCount * 3);
+            const velocities = new Float32Array(particleCount * 3);
+            const colors = new Float32Array(particleCount * 3);
+            
+            // Different distribution patterns for each stage
+            for (let i = 0; i < particleCount; i++) {
+                const i3 = i * 3;
+                
+                if (stage === 0) {
+                    // Stage 1: Scattered debris field
+                    positions[i3] = (Math.random() - 0.5) * 80;
+                    positions[i3 + 1] = (Math.random() - 0.5) * 80;
+                    positions[i3 + 2] = (Math.random() - 0.5) * 80;
+                    
+                    velocities[i3] = (Math.random() - 0.5) * 0.1;
+                    velocities[i3 + 1] = (Math.random() - 0.5) * 0.1;
+                    velocities[i3 + 2] = (Math.random() - 0.5) * 0.1;
+                } else if (stage === 1) {
+                    // Stage 2: Starting to clump
+                    const angle = Math.random() * Math.PI * 2;
+                    const radius = Math.random() * 40 + 10;
+                    positions[i3] = Math.cos(angle) * radius;
+                    positions[i3 + 1] = (Math.random() - 0.5) * 20;
+                    positions[i3 + 2] = Math.sin(angle) * radius;
+                    
+                    const speed = 0.05;
+                    velocities[i3] = -Math.sin(angle) * speed;
+                    velocities[i3 + 1] = (Math.random() - 0.5) * 0.02;
+                    velocities[i3 + 2] = Math.cos(angle) * speed;
+                } else if (stage === 2) {
+                    // Stage 3: More concentrated accretion disk
+                    const angle = Math.random() * Math.PI * 2;
+                    const radius = Math.random() * 25 + 5;
+                    positions[i3] = Math.cos(angle) * radius;
+                    positions[i3 + 1] = (Math.random() - 0.5) * 8;
+                    positions[i3 + 2] = Math.sin(angle) * radius;
+                    
+                    const speed = 0.08;
+                    velocities[i3] = -Math.sin(angle) * speed;
+                    velocities[i3 + 1] = (Math.random() - 0.5) * 0.01;
+                    velocities[i3 + 2] = Math.cos(angle) * speed;
+                } else {
+                    // Stage 4: Final planet with remaining debris
+                    const angle = Math.random() * Math.PI * 2;
+                    const radius = Math.random() * 15 + 8;
+                    positions[i3] = Math.cos(angle) * radius;
+                    positions[i3 + 1] = (Math.random() - 0.5) * 4;
+                    positions[i3 + 2] = Math.sin(angle) * radius;
+                    
+                    const speed = 0.1;
+                    velocities[i3] = -Math.sin(angle) * speed;
+                    velocities[i3 + 1] = (Math.random() - 0.5) * 0.005;
+                    velocities[i3 + 2] = Math.cos(angle) * speed;
+                }
+                
+                // Color variation - rocky browns and grays
+                const colorVariation = Math.random();
+                if (colorVariation < 0.4) {
+                    // Rocky brown
+                    colors[i3] = 0.6 + Math.random() * 0.3;
+                    colors[i3 + 1] = 0.4 + Math.random() * 0.2;
+                    colors[i3 + 2] = 0.2 + Math.random() * 0.1;
+                } else if (colorVariation < 0.7) {
+                    // Gray rock
+                    const gray = 0.4 + Math.random() * 0.3;
+                    colors[i3] = gray;
+                    colors[i3 + 1] = gray;
+                    colors[i3 + 2] = gray;
+                } else {
+                    // Metallic
+                    colors[i3] = 0.7 + Math.random() * 0.3;
+                    colors[i3 + 1] = 0.6 + Math.random() * 0.2;
+                    colors[i3 + 2] = 0.5 + Math.random() * 0.1;
+                }
+            }
+            
+            geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+            geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+            
+            // Create point material for particles
+            const material = new THREE.PointsMaterial({
+                size: 2.0,
+                vertexColors: true,
+                transparent: true,
+                opacity: 0.8,
+                sizeAttenuation: true
+            });
+            
+            const particles = new THREE.Points(geometry, material);
+            particles.userData = { velocities: velocities, stage: stage };
+            scenes[stage].add(particles);
+            particleSystems.push(particles);
+            
+            // Create planet core for stages 3 and 4
+            if (stage >= 2) {
+                const coreSize = stage === 2 ? 2 : 4;
+                const coreGeometry = new THREE.SphereGeometry(coreSize, 32, 32);
+                const coreMaterial = new THREE.MeshPhongMaterial({
+                    color: stage === 2 ? 0x8B4513 : 0x654321,
+                    shininess: 30
+                });
+                const core = new THREE.Mesh(coreGeometry, coreMaterial);
+                scenes[stage].add(core);
+                planetCores.push(core);
+            } else {
+                planetCores.push(null);
+            }
+        }
+        
+        function animate() {
+            requestAnimationFrame(animate);
+            
+            if (!paused) {
+                // Update particles
+                particleSystems.forEach(function(system, stage) {
+                    if (!system) return;
+                    
+                    const positions = system.geometry.attributes.position.array;
+                    const velocities = system.userData.velocities;
+                    const speed = STAGE_SPEEDS[stage];
+                    
+                    for (let i = 0; i < positions.length; i += 3) {
+                        const x = positions[i];
+                        const y = positions[i + 1];
+                        const z = positions[i + 2];
+                        
+                        // Apply gravitational attraction toward center
+                        const dist = Math.sqrt(x * x + y * y + z * z);
+                        const force = Math.min(0.001 * (stage + 1), 0.01) / (dist + 1);
+                        
+                        velocities[i] -= x * force;
+                        velocities[i + 1] -= y * force * 0.1;
+                        velocities[i + 2] -= z * force;
+                        
+                        // Update positions
+                        positions[i] += velocities[i] * speed;
+                        positions[i + 1] += velocities[i + 1] * speed;
+                        positions[i + 2] += velocities[i + 2] * speed;
+                        
+                        // Add orbital motion for later stages
+                        if (stage >= 1) {
+                            const angle = Math.atan2(z, x);
+                            const radius = Math.sqrt(x * x + z * z);
+                            const orbitalSpeed = 0.01 * (stage + 1) / (radius + 1);
+                            
+                            velocities[i] += -Math.sin(angle) * orbitalSpeed;
+                            velocities[i + 2] += Math.cos(angle) * orbitalSpeed;
+                        }
+                        
+                        // Apply damping
+                        velocities[i] *= 0.999;
+                        velocities[i + 1] *= 0.995;
+                        velocities[i + 2] *= 0.999;
+                    }
+                    
+                    system.geometry.attributes.position.needsUpdate = true;
+                });
+                
+                // Rotate planet cores
+                planetCores.forEach(function(core) {
+                    if (core) {
+                        core.rotation.y += 0.01;
+                    }
+                });
+            }
+            
+            // Render each viewport with its own scene
+            renderers.forEach(function(renderer, index) {
+                renderer.render(scenes[index], cameras[index]);
+            });
+        }
+        
+        function onWindowResize() {
+            renderers.forEach(function(renderer, index) {
+                const viewport = document.getElementById('viewport' + (index + 1));
+                const width = viewport.clientWidth;
+                const height = viewport.clientHeight;
+                
+                cameras[index].aspect = width / height;
+                cameras[index].updateProjectionMatrix();
+                renderer.setSize(width, height);
+            });
+        }
+        
+        function resetSimulation() {
+            // Clear existing systems from all scenes
+            particleSystems.forEach(function(system, index) {
+                if (system) scenes[index].remove(system);
+            });
+            planetCores.forEach(function(core, index) {
+                if (core && index >= 2) scenes[index].remove(core);
+            });
+            
+            particleSystems = [];
+            planetCores = [];
+            
+            // Recreate particle systems
+            for (let i = 0; i < 4; i++) {
+                createParticleSystem(i);
+            }
+        }
+        
+        function togglePause() {
+            paused = !paused;
+        }
+        
+        // Initialize and start the simulation
+        init();
+        animate();
+    </script>
+</body>
+</html>
